@@ -1,38 +1,52 @@
-# Apex GPU
+<p align="center">
+  <img src="black-logo-with-text.png" alt="Apex Compute" width="300">
+</p>
 
-A Vulkan 1.4 GPU for the AMD Kintex-7 (`xc7k480t`) PCIe board.
+<p align="center">
+  A Vulkan 1.4 GPU for the AMD Kintex-7 (<code>xc7k480t</code>) PCIe board
+</p>
+
+<p align="center">
+  <a href="https://discord.gg/SqprdvQXnC"><img src="https://img.shields.io/badge/Discord-Join%20Us-7289da?logo=discord&logoColor=white" alt="Discord"></a>
+</p>
+
+# Apex GPU Setup and Usage Guide
+
+This guide takes a new host from a fresh install to `vkcube` spinning on the
+card. You build both drivers yourself: the kernel driver from `driver/`, and
+the Vulkan driver from the `mesa/` submodule. The GPU image is prebuilt and
+encrypted for the board's key.
 
 | Folder | Contents |
-|---|---|
+| --- | --- |
 | `image/` | GPU image for the board's flash |
 | `tools/` | `apex_flash.py`, which programs and boots the flash over PCIe |
 | `driver/` | Linux kernel driver (`apex_pci`) |
-| `mesa/` | Vulkan driver source: the `mesa-kintex7` branch of apex-compute/mesa (submodule) |
+| `mesa/` | Vulkan driver source: the `mesa-kintex7` branch of [apex-compute/mesa](https://github.com/apex-compute/mesa) (submodule) |
+| `requirements.txt` | Ubuntu packages for building and running the drivers |
+| `FLASH.md` | Switching between the factory and GPU images |
 
-The steps below take a new host from a fresh install to `vkcube` spinning on
-the card. You build both drivers yourself: the kernel driver from `driver/`,
-and the Vulkan driver from the `mesa/` submodule, the `mesa-kintex7` branch of
-[apex-compute/mesa](https://github.com/apex-compute/mesa). The GPU image is
-prebuilt: it is encrypted for the board's key.
-
-## 1. What you need
+## Prerequisites
 
 - A Kintex-7 board from Apex Compute in a PCIe slot.
-- An x86-64 host running Ubuntu 24.04 (other recent Linux distributions work
-  with the equivalent packages), with `sudo` and internet access.
-- Linux 6.11 or newer (tested on 6.11). Ubuntu 24.04's original kernel is 6.8;
-  install the HWE kernel (`sudo apt install linux-generic-hwe-24.04`) and
-  reboot into it. Check with `uname -r`.
-- Secure Boot disabled in the firmware setup, or a way to sign kernel modules:
-  the kernel driver is built locally and is not signed, and with Secure Boot on
-  `insmod` fails with `Key was rejected by service` (check with
-  `mokutil --sb-state`).
+- An x86-64 host running Ubuntu 24.04, with `sudo` and internet access.
+- Linux 6.11 or newer (tested on 6.11). Check with `uname -r`.
+- Secure Boot disabled, or a way to sign kernel modules. Check with
+  `mokutil --sb-state`.
 - An X11 display for the cube's window: a desktop on the host, or a remote
-  desktop session (step 8).
+  desktop session.
 
-## 2. Install the host packages and get the repository
+> **Tip:** Ubuntu 24.04's original kernel is 6.8. Install the HWE kernel and
+> reboot into it:
+> ```bash
+> sudo apt install linux-generic-hwe-24.04
+> ```
 
-```sh
+## Installation
+
+### 1. Get the Repository and Packages
+
+```bash
 sudo apt update
 sudo apt install git
 git clone https://github.com/apex-compute/apex-gpu.git
@@ -40,74 +54,84 @@ cd apex-gpu
 sudo apt install linux-headers-$(uname -r) $(grep -v '^#' requirements.txt)
 ```
 
-`requirements.txt` lists every package the steps below need: for the kernel
-driver, the Vulkan driver build and `vkcube`. Run the remaining steps from the
-`apex-gpu` folder.
+Run the remaining steps from the `apex-gpu` folder.
 
-## 3. Flash the GPU image
+### 2. Flash the GPU Image
 
-Find the card and program the image into its GPU slot (a few minutes):
+Find the card, then program the image into its GPU slot (a few minutes):
 
-```sh
-lspci -D -nn -d 10ee:             # the card is 10ee:7024 (factory image) or 10ee:a15e (GPU image)
-export BDF=0000:01:00.0           # replace with the card's address
+```bash
+# The card is 10ee:7024 (factory image) or 10ee:a15e (GPU image)
+lspci -D -nn -d 10ee:
+
+# Replace with the card's address
+export BDF=0000:01:00.0
+
 sudo python3 -I tools/apex_flash.py program image/gpu_k7_flash.bin --slot gpu --bdf $BDF
 sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
-lspci -s $BDF -n                  # the GPU image shows up as 10ee:a15e
+
+# The GPU image shows up as 10ee:a15e
+lspci -s $BDF -n
 ```
 
-Do not reboot or power off the host while programming. Programming is needed
-once; the image stays in the flash.
+> **Warning:** Do not reboot or power off the host while programming.
+> Programming is needed once; the image stays in the flash.
 
-## 4. Build and load the kernel driver
+### 3. Build and Load the Kernel Driver
 
-The driver needs the kernel's `drm_exec`, `drm_gpuvm` and `gpu_sched`
-modules. If `modinfo drm_gpuvm` reports `not found`, install the extra modules
-for your kernel (`sudo apt install linux-modules-extra-$(uname -r)`).
-
-```sh
+```bash
 make -C driver
 sudo modprobe -a drm_exec drm_gpuvm gpu_sched
 sudo insmod driver/apex_pci.ko
-ls /dev/dri/renderD*              # a new render node appears
+
+# A new render node appears
+ls /dev/dri/renderD*
 ```
+
+> **Tip:** If `modprobe` cannot find `drm_gpuvm`, install the extra modules
+> for your kernel:
+> ```bash
+> sudo apt install linux-modules-extra-$(uname -r)
+> ```
+
+> **Tip:** If `insmod` fails with `Key was rejected by service`, Secure Boot is
+> on: disable it in the firmware setup, or sign the module.
+
+> **Tip:** On kernels older than 6.18 the driver can fail to probe with error
+> `-16` (`sudo dmesg | grep apex`). Resize BAR2 to 2 GiB and bind it again:
+> ```bash
+> echo 11   | sudo tee /sys/bus/pci/devices/$BDF/resource2_resize
+> echo $BDF | sudo tee /sys/bus/pci/drivers/apex_gpu/bind
+> ```
 
 `insmod` loads the driver until the next reboot; repeat this step after one.
 
-On kernels older than 6.18 the driver can fail to probe with error `-16`
-(`sudo dmesg | grep apex`). Resize BAR2 to 2 GiB and bind it again:
+### 4. Give Your User Access to the Card
 
-```sh
-echo 11   | sudo tee /sys/bus/pci/devices/$BDF/resource2_resize
-echo $BDF | sudo tee /sys/bus/pci/drivers/apex_gpu/bind
-```
-
-## 5. Give your user access to the card
-
-```sh
+```bash
 sudo usermod -aG render $USER
 ```
 
-Log out and back in (or start a new SSH session) so the group applies. In the
-new shell, go back to the `apex-gpu` folder and set `BDF` again:
+Log out and back in (or start a new SSH session) so the group applies, then
+go back to the folder and set the card's address again:
 
-```sh
+```bash
 cd apex-gpu
-export BDF=0000:01:00.0           # the card's address from step 3
+export BDF=0000:01:00.0
 ```
 
-## 6. Build the Vulkan driver
+### 5. Build the Vulkan Driver
 
-The Vulkan driver is the Apex driver in Mesa, in the `mesa/` submodule. Mesa
-needs meson 1.4 or newer and Rust 1.85 or newer, which are newer than the
-Ubuntu 24.04 packages; the other build packages came from `requirements.txt` in
-step 2. The submodule fetch downloads only the pinned commit; the build takes a
-few minutes:
+Mesa needs meson 1.4 or newer and Rust 1.85 or newer, which are newer than the
+Ubuntu 24.04 packages. The submodule fetch downloads only the pinned commit;
+the build takes a few minutes:
 
-```sh
+```bash
+# meson and Rust
 pipx install 'meson>=1.4' && pipx ensurepath && export PATH=$HOME/.local/bin:$PATH
 curl https://sh.rustup.rs -sSf | sh -s -- -y && . "$HOME/.cargo/env"
 
+# Fetch and build the Vulkan driver
 git submodule update --init mesa
 meson setup build/mesa mesa -Dbuildtype=release -Dstrip=true \
   -Dapex-compiler=true -Dvulkan-drivers= -Dgallium-drivers= -Dplatforms=x11 \
@@ -117,69 +141,74 @@ ninja -C build/mesa src/apex/vulkan/libvulkan_apex.so \
 ```
 
 This builds `libvulkan_apex.so` and its manifest,
-`build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json`, which the next
-steps use. To move to the newest `mesa-kintex7`, run
-`git submodule update --remote mesa` and the `ninja` command again.
+`build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json`.
 
-## 7. Check Vulkan
+> **Tip:** To move to the newest `mesa-kintex7`, update the submodule and run
+> the `ninja` command again:
+> ```bash
+> git submodule update --remote mesa
+> ```
 
-```sh
+### 6. Check Vulkan
+
+```bash
 export VK_DRIVER_FILES=$PWD/build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json
-vulkaninfo --summary              # deviceName = Apex, apiVersion = 1.4.0
+
+# deviceName = Apex, apiVersion = 1.4.0
+vulkaninfo --summary
 ```
 
-`VK_DRIVER_FILES` points the Vulkan loader at the driver you built; it is not
+`VK_DRIVER_FILES` points the Vulkan loader at the driver you built. It is not
 installed system-wide, so set it in every shell that runs Vulkan.
 
-## 8. Run vkcube
+### 7. Run vkcube
 
 `vkcube` draws a spinning textured cube. The card renders each frame and the
-CPU copies it to an X11 window, because the card has no display path to the
-X server (`MESA_VK_WSI_DEBUG=sw`). Expect about 9 frames per second at
-512x512.
+CPU copies it to an X11 window (`MESA_VK_WSI_DEBUG=sw`), because the card has
+no display path to the X server. Expect about 9 frames per second at 512x512.
 
 Without a display, render 300 frames into a virtual X server; it exits with
 status 0:
 
-```sh
+```bash
 export VK_DRIVER_FILES=$PWD/build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json
 export MESA_VK_WSI_DEBUG=sw
 xvfb-run -a vkcube --c 300 --width 512 --height 512; echo "exit $?"
 ```
 
-To watch it, run it in an X11 desktop on the host:
+To watch it, run it in an X11 desktop on the host. It prints
+`Selected GPU 0: Apex, type: DiscreteGpu`; close the window to stop it:
 
-```sh
+```bash
 export VK_DRIVER_FILES=$PWD/build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json
 export MESA_VK_WSI_DEBUG=sw
-vkcube --width 512 --height 512   # prints: Selected GPU 0: Apex, type: DiscreteGpu
+vkcube --width 512 --height 512
 ```
 
-On a host without a desktop, install a remote desktop server and connect to
-the host with any RDP client (Windows Remote Desktop, Remmina, Windows App),
-then run the commands above in a terminal there, from the `apex-gpu` folder:
+> **Tip:** On a host without a desktop, install a remote desktop server, connect
+> with any RDP client (Windows Remote Desktop, Remmina, Windows App), and run
+> the commands above in a terminal there, from the `apex-gpu` folder:
+> ```bash
+> sudo apt install xrdp xterm openbox
+> ```
 
-```sh
-sudo apt install xrdp xterm openbox
-```
+---
 
-Close the window to stop it.
-
-## After a power cycle
+## After a Power Cycle
 
 The board loads its factory image at power-up. Boot the GPU slot again (no
-need to program it), then load the kernel driver (step 4):
+need to program it), then load the kernel driver ([step 3](#3-build-and-load-the-kernel-driver)):
 
-```sh
+```bash
 cd apex-gpu
-export BDF=0000:01:00.0           # the card's address from step 3
+export BDF=0000:01:00.0
 sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
 ```
 
-## Switch images and update the factory image
+## Switch Images and Update the Factory Image
 
-The board's flash also holds a factory image. To switch between it and the
-GPU image, or to update it, see [FLASH.md](FLASH.md).
+The board's flash also holds a factory image. To switch between it and the GPU
+image, or to update it, see [FLASH.md](FLASH.md).
 
 ## License
 
