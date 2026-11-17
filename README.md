@@ -26,13 +26,15 @@ prebuilt: it is encrypted for the board's key.
 
 ```sh
 sudo apt update
-sudo apt install git curl build-essential linux-headers-$(uname -r) python3 \
-  pciutils libvulkan1 vulkan-tools xvfb
+sudo apt install git
 git clone https://github.com/apex-compute/apex-gpu.git
 cd apex-gpu
+sudo apt install linux-headers-$(uname -r) $(grep -v '^#' requirements.txt)
 ```
 
-Run the remaining steps from the `apex-gpu` folder.
+`requirements.txt` lists every package the steps below need: for the kernel
+driver, the Vulkan driver build and `vkcube`. Run the remaining steps from the
+`apex-gpu` folder.
 
 ## 3. Flash the GPU image
 
@@ -77,16 +79,11 @@ Log out and back in (or start a new SSH session) so the group applies.
 ## 6. Build the Vulkan driver
 
 The Vulkan driver is the Apex driver in Mesa. Mesa needs meson 1.4 or newer and
-Rust 1.85 or newer, which are newer than the Ubuntu 24.04 packages. Mesa is
-cloned next to `apex-gpu`; the build takes a few minutes:
+Rust 1.85 or newer, which are newer than the Ubuntu 24.04 packages; the other
+build packages came from `requirements.txt` in step 2. Mesa is cloned next to
+`apex-gpu`; the build takes a few minutes:
 
 ```sh
-sudo apt install pkg-config ninja-build pipx bison flex \
-  python3-mako python3-yaml python3-packaging glslang-tools spirv-tools \
-  libdrm-dev libudev-dev libexpat1-dev libzstd-dev zlib1g-dev \
-  libunwind-dev libx11-dev libx11-xcb-dev libxrandr-dev libxshmfence-dev \
-  libxcb1-dev libxcb-dri3-dev libxcb-present-dev libxcb-randr0-dev \
-  libxcb-shm0-dev libxcb-sync-dev libxcb-xfixes0-dev libxcb-keysyms1-dev
 pipx install 'meson>=1.4' && pipx ensurepath && export PATH=$HOME/.local/bin:$PATH
 curl https://sh.rustup.rs -sSf | sh -s -- -y && . "$HOME/.cargo/env"
 
