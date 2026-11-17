@@ -24,7 +24,7 @@ jobs:
         run: |
           name=apex-gpu-k7-$TAG
           mkdir -p dist/$name
-          cp -r README.md LICENSE driver tools image dist/$name/
+          cp -r README.md FLASH.md LICENSE driver tools image dist/$name/
           tar -C dist -czf dist/$name.tar.gz $name
           (cd dist && sha256sum $name.tar.gz > $name.tar.gz.sha256)
       - name: Publish
