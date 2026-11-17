@@ -50,9 +50,33 @@ echo $BDF | sudo tee /sys/bus/pci/drivers/apex_gpu/bind
 Your user needs access to the render node (the `render` group).
 
 ```sh
-export APEX_DEVELOPMENT=1
+sudo apt install vulkan-tools      # vulkaninfo and vkcube
 export VK_DRIVER_FILES=$PWD/vulkan/apex_icd.x86_64.json
 vulkaninfo --summary
+```
+
+## Run vkcube
+
+`vkcube` draws a spinning textured cube. The card renders each frame and the
+CPU copies it to an X11 window, because the card has no display path to the
+X server (`MESA_VK_WSI_DEBUG=sw`). Expect about 9 frames per second at
+512x512.
+
+```sh
+export VK_DRIVER_FILES=$PWD/vulkan/apex_icd.x86_64.json
+export MESA_VK_WSI_DEBUG=sw
+vkcube --width 512 --height 512
+```
+
+Run it in an X11 desktop on the host, or in a remote desktop session (for
+example `xrdp`). It prints `Selected GPU 0: Apex, type: DiscreteGpu`.
+
+To check it without a desktop, render 300 frames into a virtual X server; it
+exits with status 0:
+
+```sh
+sudo apt install xvfb
+xvfb-run -a vkcube --c 300 --width 512 --height 512; echo "exit $?"
 ```
 
 ## License
