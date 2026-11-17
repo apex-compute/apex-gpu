@@ -78,16 +78,7 @@ scene renders correctly on it.
 | `pointSizeRange` | 0.125 – 255.875 | 1 – 255.875 |
 | `lineWidthRange` | 0 – 8 | 1 – 16 |
 
-## Features
-
-The Kintex-7 supports every core feature that Vulkan 1.4 requires. Of the
-optional core features, the Intel GPU has these and the Kintex-7 does not:
-
-| Area | Features |
-| --- | --- |
-| Shader stages and types | `tessellationShader`, `shaderFloat64` |
-| Sparse resources | `sparseBinding`, `sparseResidencyBuffer`, `sparseResidencyImage2D`, `sparseResidencyImage3D`, `sparseResidency2Samples`, `sparseResidency4Samples`, `sparseResidencyAliased`, `shaderResourceResidency` |
-| Other | `depthBounds`, `pipelineStatisticsQuery`, `inheritedQueries`, `variableMultisampleRate`, `shaderResourceMinLod` |
+## Extensions
 
 Extensions the Intel GPU adds include ray tracing (`VK_KHR_ray_tracing_pipeline`,
 `VK_KHR_ray_query`, `VK_KHR_acceleration_structure`), mesh shaders
