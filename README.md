@@ -20,6 +20,13 @@ prebuilt: it is encrypted for the board's key.
 - A Kintex-7 board from Apex Compute in a PCIe slot.
 - An x86-64 host running Ubuntu 24.04 (other recent Linux distributions work
   with the equivalent packages), with `sudo` and internet access.
+- Linux 6.11 or newer (tested on 6.11). Ubuntu 24.04's original kernel is 6.8;
+  install the HWE kernel (`sudo apt install linux-generic-hwe-24.04`) and
+  reboot into it. Check with `uname -r`.
+- Secure Boot disabled in the firmware setup, or a way to sign kernel modules:
+  the kernel driver is built locally and is not signed, and with Secure Boot on
+  `insmod` fails with `Key was rejected by service` (check with
+  `mokutil --sb-state`).
 - An X11 display for the cube's window: a desktop on the host, or a remote
   desktop session (step 8).
 
@@ -54,12 +61,18 @@ once; the image stays in the flash.
 
 ## 4. Build and load the kernel driver
 
+The driver needs the kernel's `drm_exec`, `drm_gpuvm` and `gpu_sched`
+modules. If `modinfo drm_gpuvm` reports `not found`, install the extra modules
+for your kernel (`sudo apt install linux-modules-extra-$(uname -r)`).
+
 ```sh
 make -C driver
 sudo modprobe -a drm_exec drm_gpuvm gpu_sched
 sudo insmod driver/apex_pci.ko
 ls /dev/dri/renderD*              # a new render node appears
 ```
+
+`insmod` loads the driver until the next reboot; repeat this step after one.
 
 On kernels older than 6.18 the driver can fail to probe with error `-16`
 (`sudo dmesg | grep apex`). Resize BAR2 to 2 GiB and bind it again:
@@ -75,7 +88,13 @@ echo $BDF | sudo tee /sys/bus/pci/drivers/apex_gpu/bind
 sudo usermod -aG render $USER
 ```
 
-Log out and back in (or start a new SSH session) so the group applies.
+Log out and back in (or start a new SSH session) so the group applies. In the
+new shell, go back to the `apex-gpu` folder and set `BDF` again:
+
+```sh
+cd apex-gpu
+export BDF=0000:01:00.0           # the card's address from step 3
+```
 
 ## 6. Build the Vulkan driver
 
@@ -138,7 +157,7 @@ vkcube --width 512 --height 512   # prints: Selected GPU 0: Apex, type: Discrete
 
 On a host without a desktop, install a remote desktop server and connect to
 the host with any RDP client (Windows Remote Desktop, Remmina, Windows App),
-then run the commands above in a terminal there:
+then run the commands above in a terminal there, from the `apex-gpu` folder:
 
 ```sh
 sudo apt install xrdp xterm openbox
@@ -152,6 +171,8 @@ The board loads its factory image at power-up. Boot the GPU slot again (no
 need to program it), then load the kernel driver (step 4):
 
 ```sh
+cd apex-gpu
+export BDF=0000:01:00.0           # the card's address from step 3
 sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
 ```
 
