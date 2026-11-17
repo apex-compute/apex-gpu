@@ -77,26 +77,3 @@ scene renders correctly on it.
 | `maxClipDistances` | 8 | 8 |
 | `pointSizeRange` | 0.125 – 255.875 | 1 – 255.875 |
 | `lineWidthRange` | 0 – 8 | 1 – 16 |
-
-## Extensions
-
-Extensions the Intel GPU adds include ray tracing (`VK_KHR_ray_tracing_pipeline`,
-`VK_KHR_ray_query`, `VK_KHR_acceleration_structure`), mesh shaders
-(`VK_EXT_mesh_shader`), fragment shading rate, graphics pipeline libraries,
-descriptor buffers, extended dynamic state 3, 64-bit and float atomics, and
-host image copy.
-
-## Reproduce
-
-```bash
-# Intel GPU
-VK_DRIVER_FILES=/usr/share/vulkan/icd.d/intel_icd.json MESA_VK_WSI_DEBUG=sw \
-  xvfb-run -a vkmark --winsys xcb -p fifo
-
-# Kintex-7
-VK_DRIVER_FILES=$PWD/build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json MESA_VK_WSI_DEBUG=sw \
-  xvfb-run -a vkmark --winsys xcb -p fifo
-
-# Properties, limits and features of both
-VK_ADD_DRIVER_FILES=$PWD/build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json vulkaninfo --summary
-```
