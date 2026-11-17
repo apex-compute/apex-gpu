@@ -7,10 +7,11 @@ A Vulkan 1.4 GPU for the AMD Kintex-7 (`xc7k480t`) PCIe board.
 | `image/` | GPU image for the board's flash |
 | `tools/` | `apex_flash.py`, which programs and boots the flash over PCIe |
 | `driver/` | Linux kernel driver (`apex_pci`) |
+| `mesa/` | Vulkan driver source: the `mesa-kintex7` branch of apex-compute/mesa (submodule) |
 
 The steps below take a new host from a fresh install to `vkcube` spinning on
 the card. You build both drivers yourself: the kernel driver from `driver/`,
-and the Vulkan driver from the `mesa-kintex7` branch of
+and the Vulkan driver from the `mesa/` submodule, the `mesa-kintex7` branch of
 [apex-compute/mesa](https://github.com/apex-compute/mesa). The GPU image is
 prebuilt: it is encrypted for the board's key.
 
@@ -78,31 +79,33 @@ Log out and back in (or start a new SSH session) so the group applies.
 
 ## 6. Build the Vulkan driver
 
-The Vulkan driver is the Apex driver in Mesa. Mesa needs meson 1.4 or newer and
-Rust 1.85 or newer, which are newer than the Ubuntu 24.04 packages; the other
-build packages came from `requirements.txt` in step 2. Mesa is cloned next to
-`apex-gpu`; the build takes a few minutes:
+The Vulkan driver is the Apex driver in Mesa, in the `mesa/` submodule. Mesa
+needs meson 1.4 or newer and Rust 1.85 or newer, which are newer than the
+Ubuntu 24.04 packages; the other build packages came from `requirements.txt` in
+step 2. The submodule fetch downloads only the pinned commit; the build takes a
+few minutes:
 
 ```sh
 pipx install 'meson>=1.4' && pipx ensurepath && export PATH=$HOME/.local/bin:$PATH
 curl https://sh.rustup.rs -sSf | sh -s -- -y && . "$HOME/.cargo/env"
 
-git clone --depth 1 -b mesa-kintex7 https://github.com/apex-compute/mesa.git ../mesa
-meson setup ../mesa/build ../mesa -Dbuildtype=release -Dstrip=true \
+git submodule update --init mesa
+meson setup build/mesa mesa -Dbuildtype=release -Dstrip=true \
   -Dapex-compiler=true -Dvulkan-drivers= -Dgallium-drivers= -Dplatforms=x11 \
   -Dglx=disabled -Degl=disabled -Dgbm=disabled -Dllvm=disabled
-ninja -C ../mesa/build src/apex/vulkan/libvulkan_apex.so \
+ninja -C build/mesa src/apex/vulkan/libvulkan_apex.so \
   src/apex/vulkan/apex_development_icd.x86_64.json
 ```
 
 This builds `libvulkan_apex.so` and its manifest,
-`../mesa/build/src/apex/vulkan/apex_development_icd.x86_64.json`, which the
-next steps use.
+`build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json`, which the next
+steps use. To move to the newest `mesa-kintex7`, run
+`git submodule update --remote mesa` and the `ninja` command again.
 
 ## 7. Check Vulkan
 
 ```sh
-export VK_DRIVER_FILES=$(realpath ../mesa/build/src/apex/vulkan/apex_development_icd.x86_64.json)
+export VK_DRIVER_FILES=$PWD/build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json
 vulkaninfo --summary              # deviceName = Apex, apiVersion = 1.4.0
 ```
 
@@ -120,7 +123,7 @@ Without a display, render 300 frames into a virtual X server; it exits with
 status 0:
 
 ```sh
-export VK_DRIVER_FILES=$(realpath ../mesa/build/src/apex/vulkan/apex_development_icd.x86_64.json)
+export VK_DRIVER_FILES=$PWD/build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json
 export MESA_VK_WSI_DEBUG=sw
 xvfb-run -a vkcube --c 300 --width 512 --height 512; echo "exit $?"
 ```
@@ -128,7 +131,7 @@ xvfb-run -a vkcube --c 300 --width 512 --height 512; echo "exit $?"
 To watch it, run it in an X11 desktop on the host:
 
 ```sh
-export VK_DRIVER_FILES=$(realpath ../mesa/build/src/apex/vulkan/apex_development_icd.x86_64.json)
+export VK_DRIVER_FILES=$PWD/build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json
 export MESA_VK_WSI_DEBUG=sw
 vkcube --width 512 --height 512   # prints: Selected GPU 0: Apex, type: DiscreteGpu
 ```

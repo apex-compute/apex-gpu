@@ -1,0 +1,5 @@
+[submodule "mesa"]
+	path = mesa
+	url = https://github.com/apex-compute/mesa.git
+	branch = mesa-kintex7
+	shallow = true
