@@ -10,8 +10,9 @@ A Vulkan 1.4 GPU for the AMD Kintex-7 (`xc7k480t`) PCIe board.
 | `vulkan/` | Vulkan driver (ICD) for x86-64 Linux, prebuilt |
 
 The steps below take a new host from a fresh install to `vkcube` spinning on
-the card, using the prebuilt files. The GPU image is encrypted for the
-board's key.
+the card. Steps 1–7 use the prebuilt Vulkan driver in `vulkan/`; step 8
+builds it from source. The kernel driver is built from source in step 4. The
+GPU image is prebuilt only: it is encrypted for the board's key.
 
 ## 1. What you need
 
@@ -114,6 +115,34 @@ sudo apt install xrdp xterm openbox
 ```
 
 Close the window to stop it.
+
+## 8. Build the Vulkan driver from source
+
+The Vulkan driver is the Apex driver in Mesa, on the `mesa-kintex7` branch of
+[apex-compute/mesa](https://github.com/apex-compute/mesa). Mesa needs meson
+1.4 or newer and Rust 1.85 or newer, which are newer than the Ubuntu 24.04
+packages. Run these from the `apex-gpu` folder; Mesa is cloned next to it:
+
+```sh
+sudo apt install build-essential pkg-config ninja-build pipx bison flex \
+  python3-mako python3-yaml python3-packaging glslang-tools spirv-tools \
+  libdrm-dev libudev-dev libexpat1-dev libzstd-dev zlib1g-dev \
+  libunwind-dev libx11-dev libx11-xcb-dev libxrandr-dev libxshmfence-dev \
+  libxcb1-dev libxcb-dri3-dev libxcb-present-dev libxcb-randr0-dev \
+  libxcb-shm0-dev libxcb-sync-dev libxcb-xfixes0-dev libxcb-keysyms1-dev
+pipx install 'meson>=1.4' && pipx ensurepath && export PATH=$HOME/.local/bin:$PATH
+curl https://sh.rustup.rs -sSf | sh -s -- -y && . "$HOME/.cargo/env"
+
+git clone --depth 1 -b mesa-kintex7 https://github.com/apex-compute/mesa.git ../mesa
+meson setup ../mesa/build ../mesa -Dbuildtype=release -Dstrip=true \
+  -Dapex-compiler=true -Dvulkan-drivers= -Dgallium-drivers= -Dplatforms=x11 \
+  -Dglx=disabled -Degl=disabled -Dgbm=disabled -Dllvm=disabled
+ninja -C ../mesa/build src/apex/vulkan/libvulkan_apex.so
+cp ../mesa/build/src/apex/vulkan/libvulkan_apex.so vulkan/
+```
+
+The build takes a few minutes. Then run steps 6 and 7 again: they now use the
+driver you built.
 
 ## After a power cycle
 
