@@ -23,6 +23,7 @@ encrypted for the board's key.
 | `tools/` | `apex_flash.py`, which programs and boots the flash over PCIe |
 | `driver/` | Linux kernel driver (`apex_pci`) |
 | `mesa/` | Vulkan driver source: the `mesa-kintex7` branch of [apex-compute/mesa](https://github.com/apex-compute/mesa) (submodule) |
+| `demos/` | Extra demos, such as the Apex Compute cube |
 | `requirements.txt` | Ubuntu packages for building and running the drivers |
 | `FLASH.md` | Switching between the factory and GPU images |
 
@@ -191,6 +192,43 @@ vkcube --width 512 --height 512
 > ```bash
 > sudo apt install xrdp xterm openbox
 > ```
+
+### 8. Run More Demos
+
+Set the driver and presentation the same way as for `vkcube`, then run any of
+these. Each one renders on the card; add `xvfb-run -a` in front to run it
+without a display.
+
+```bash
+export VK_DRIVER_FILES=$PWD/build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json
+export MESA_VK_WSI_DEBUG=sw
+```
+
+**vkcubepp**, the C++ version of `vkcube` (from `vulkan-tools`):
+
+```bash
+vkcubepp --width 512 --height 512
+```
+
+**vkmark**, a Vulkan benchmark: 13 scenes (vertex, texture, shading, 2D
+effects, desktop, cube, clear), each for 10 seconds, then a score (the average
+frames per second; about 3 on the Kintex-7 at its default 800x600):
+
+```bash
+vkmark --winsys xcb -p fifo
+
+# Only some scenes
+vkmark --winsys xcb -p fifo -b cube -b texture -b shading:shading=phong
+```
+
+**Apex Compute cube**: `vkcube` with the Apex Compute logo as its texture.
+`demos/apex-cube/build.sh` fetches Khronos Vulkan-Tools, swaps in the logo and
+builds it into `build/apex-cube/vkcube`:
+
+```bash
+demos/apex-cube/build.sh
+build/apex-cube/vkcube --width 512 --height 512
+```
 
 ---
 

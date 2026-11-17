@@ -41,7 +41,9 @@ libxcb-sync-dev
 libxcb-xfixes0-dev
 libxcb-keysyms1-dev
 
-# Run Vulkan and vkcube
+# Run Vulkan, vkcube and the demos (cmake builds the Apex Compute cube)
 libvulkan1
 vulkan-tools
+vkmark
 xvfb
+cmake
