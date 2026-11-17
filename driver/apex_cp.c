@@ -64,6 +64,7 @@
 #define CP_STATUS 0x050c
 #define CP_CONTEXT_LOW 0x0510
 #define CP_CONTEXT_HIGH 0x0514
+#define CP_WAVE_WATCHDOG 0x0518 /* cycles a wave may run, nonzero */
 #define CP_QUEUE_SELECT 0x0520
 #define CP_QUEUE_CONFIG 0x0524
 #define CP_RING_LOW 0x0528
@@ -83,6 +84,10 @@
 #define CP_IRQ_PENDING_HIGH 0x0564
 #define CP_IRQ_MASK_LOW 0x0568
 #define CP_IRQ_MASK_HIGH 0x056c
+#define CP_COUNTER_SELECT 0x0570
+#define CP_COUNTER_LOW 0x0574
+#define CP_COUNTER_PACKETS 1 /* packets, draws, dispatches, passes: 1-4 */
+#define CP_COUNTER_PASSES 4
 #define CP_PRIVATE_LOW 0x0580
 #define CP_PRIVATE_HIGH 0x0584
 
@@ -122,15 +127,17 @@
 #define DRAIN_TIMEOUT msecs_to_jiffies(5000)
 #define FENCE_SCAN msecs_to_jiffies(100)
 
-/* A missed fence deadline faults the queue. The default, 0, is 10 s at the
- * U50's 250 MHz GPU clock scaled to the image's clock (CP_TIMEBASE), so the
- * 50 MHz Kintex-7 gets 50 s. Workloads whose frames run longer raise it. */
+/* A fence deadline missed without progress faults the queue. The default, 0,
+ * is 10 s at the U50's 250 MHz GPU clock scaled to the image's clock
+ * (CP_TIMEBASE), so the 50 MHz Kintex-7 gets 50 s. While the CP keeps issuing
+ * work the deadline restarts, up to FENCE_PROGRESS_LIMIT deadlines. */
 static unsigned int apex_fence_timeout_ms;
 module_param_named(fence_timeout_ms, apex_fence_timeout_ms, uint, 0444);
 MODULE_PARM_DESC(fence_timeout_ms,
 		 "deadline of each queue fence in ms (default 0: 10000 at 250 MHz, scaled to the GPU clock; minimum 100)");
 #define FENCE_TIMEOUT_MS 10000ULL
 #define FENCE_TIMEOUT_HZ 250000000ULL
+#define FENCE_PROGRESS_LIMIT 32
 #define HALT_TIMEOUT_US 100000
 #define QUIESCE_TIMEOUT_US 1000000
 #define RESET_CHECK_TIMEOUT msecs_to_jiffies(1000)
@@ -219,6 +226,7 @@ struct apex_fence {
 	u64 target;
 	u64 order;		/* attach order across the device */
 	unsigned long start;	/* the deadline counts from here */
+	unsigned long head;	/* became the timed fence: bounds progress restarts */
 	int error;
 };
 
@@ -295,6 +303,7 @@ struct apex_cp {
 	struct work_struct fail_work;
 	unsigned int pending_fences;
 	u64 fence_order;
+	u32 issued; /* fence_work: last sum of the CP's issue counters */
 };
 
 static const struct drm_gem_object_funcs apex_local_funcs;
@@ -542,7 +551,7 @@ static void fences_rearm(struct apex_cp *cp, u64 order)
 			continue;
 		head = list_first_entry(&queue->fences, struct apex_fence, link);
 		if (head->order > order)
-			head->start = jiffies;
+			head->start = head->head = jiffies;
 	}
 }
 
@@ -630,21 +639,78 @@ irqreturn_t apex_cp_irq(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+/* hw_lock held for read, hardware present. Whether the CP issued a packet,
+ * draw, dispatch or pass since the last scan, and the queues then waiting on
+ * a WAIT, whose deadlines progress elsewhere does not restart. */
+/* reg_lock held: packets, draws, dispatches and passes the CP issued. */
+static u32 cp_issued_locked(struct apex_cp *cp)
+{
+	u32 issued = 0;
+	int c;
+
+	for (c = CP_COUNTER_PACKETS; c <= CP_COUNTER_PASSES; c++) {
+		writel(c, cp->bar0 + CP_COUNTER_SELECT);
+		issued += readl(cp->bar0 + CP_COUNTER_LOW);
+	}
+	return issued;
+}
+
+static u32 cp_issued(struct apex_cp *cp)
+{
+	unsigned long flags;
+	u32 issued;
+
+	spin_lock_irqsave(&cp->reg_lock, flags);
+	issued = cp_issued_locked(cp);
+	spin_unlock_irqrestore(&cp->reg_lock, flags);
+	return issued;
+}
+
+static bool cp_progress(struct apex_cp *cp, unsigned long *waiting)
+{
+	unsigned long flags;
+	u32 issued;
+	bool progress;
+	int q;
+
+	spin_lock_irqsave(&cp->reg_lock, flags);
+	issued = cp_issued_locked(cp);
+	progress = issued != cp->issued;
+	cp->issued = issued;
+	for (q = 0; progress && q < CP_QUEUES; q++) {
+		if (!READ_ONCE(cp->slots[q]))
+			continue;
+		writel(q, cp->bar0 + CP_QUEUE_SELECT);
+		if (readl(cp->bar0 + CP_QUEUE_STATE) & CP_QUEUE_WAITING)
+			set_bit(q, waiting);
+	}
+	spin_unlock_irqrestore(&cp->reg_lock, flags);
+	return progress;
+}
+
 /* Missed interrupts, deadlines and escalation: a 100 ms scan while fences
- * are pending. A missed deadline faults the queue and fails the fence. */
+ * are pending. A deadline missed without progress faults the queue and fails
+ * the fence. */
 static void cp_fence_work(struct work_struct *work)
 {
 	struct apex_cp *cp = container_of(to_delayed_work(work), struct apex_cp,
 					  fence_work);
 	struct apex_fence *fence, *next;
 	DECLARE_BITMAP(abort, CP_QUEUES);
-	unsigned long flags;
+	DECLARE_BITMAP(waiting, CP_QUEUES);
+	unsigned long flags, timeout = cp_fence_timeout(cp);
+	bool again, progress = false;
 	LIST_HEAD(done);
 	u64 order = 0;
-	bool again;
 	int q;
 
 	bitmap_zero(abort, CP_QUEUES);
+	bitmap_zero(waiting, CP_QUEUES);
+	if (down_read_trylock(&cp->hw_lock)) {
+		if (!cp->hw_gone && cp->present)
+			progress = cp_progress(cp, waiting);
+		up_read(&cp->hw_lock);
+	}
 	spin_lock_irqsave(&cp->fence_lock, flags);
 	for (q = 0; q < CP_QUEUES; q++) {
 		struct apex_queue *queue = cp->slots[q];
@@ -655,9 +721,10 @@ static void cp_fence_work(struct work_struct *work)
 		if (list_empty(&queue->fences))
 			continue;
 		fence = list_first_entry(&queue->fences, struct apex_fence, link);
-		if (!queue->timed_out &&
-		    time_before(jiffies, fence->start +
-				cp_fence_timeout(cp)))
+		if (progress && !test_bit(q, waiting) &&
+		    time_before(jiffies, fence->head + FENCE_PROGRESS_LIMIT * timeout))
+			fence->start = jiffies;
+		if (!queue->timed_out && time_before(jiffies, fence->start + timeout))
 			continue;
 		list_for_each_entry_safe(fence, next, &queue->fences, link) {
 			if (!queue->timed_out) {
@@ -770,6 +837,10 @@ static void cp_program(struct apex_cp *cp)
 	writel(upper_32_bits(cp->private_node.start), cp->bar0 + CP_PRIVATE_HIGH);
 	writel(0, cp->bar0 + CP_IRQ_MASK_LOW);
 	writel(0, cp->bar0 + CP_IRQ_MASK_HIGH);
+	/* The Kintex-7's one core at 50 MHz runs long fragment loops for tens of
+	 * seconds a wave; the progress-aware fence deadline still catches a hang. */
+	if (cp->profile == APEX_PROFILE_K7)
+		writel(U32_MAX, cp->bar0 + CP_WAVE_WATCHDOG);
 	writel(CP_CONTROL_ENABLE, cp->bar0 + CP_CONTROL);
 	kring_enable(cp);
 }
@@ -932,10 +1003,14 @@ static void cp_reset_work(struct work_struct *work)
 /* Append packets and a KFENCE to queue 0 and wait for it (hw and kring_lock
  * held). Returns 0 once the packets completed, -ECANCELED when a native reset
  * proved instead that no GPU work remains, and -EIO when backing must stay
- * quarantined. */
+ * quarantined. A VM_DRAIN waits for work its VM already issued, so the wait
+ * has a fence's deadline, restarted like a fence's while the CP issues work:
+ * a Kintex-7 queue can run for minutes ahead of it. */
 static int kring_run_locked(struct apex_cp *cp, const u32 *packets, unsigned int count)
 {
-	unsigned long deadline = jiffies + DRAIN_TIMEOUT;
+	unsigned long timeout = max(DRAIN_TIMEOUT, cp_fence_timeout(cp));
+	unsigned long head = jiffies, deadline = head + timeout;
+	u32 issued = cp_issued(cp), now;
 	u64 seq;
 
 	if (cp->failed || !cp->present)
@@ -949,11 +1024,17 @@ static int kring_run_locked(struct apex_cp *cp, const u32 *packets, unsigned int
 			return -EIO;
 	}
 	seq = kring_append(cp, packets, count);
-	if (kring_wait(cp, seq, deadline))
-		return 0;
-	if (cp->failed)
-		return -EIO;
-	return cp_reset_locked(cp) ?: -ECANCELED;
+	while (!kring_wait(cp, seq, deadline)) {
+		if (cp->failed)
+			return -EIO;
+		now = cp_issued(cp);
+		if (cp->kq.faulted || now == issued ||
+		    time_after(jiffies, head + FENCE_PROGRESS_LIMIT * timeout))
+			return cp_reset_locked(cp) ?: -ECANCELED;
+		issued = now;
+		deadline = jiffies + timeout;
+	}
+	return 0;
 }
 
 static int kring_run(struct apex_cp *cp, const u32 *packets, unsigned int count)
@@ -2108,7 +2189,7 @@ static int queue_fence_ioctl(struct drm_device *drm, void *data, struct drm_file
 	dma_fence_init(&fence->base, &apex_fence_ops, &fence->lock, q->fence_context,
 		       ++q->fence_seq);
 	fence->target = args->seqno;
-	fence->start = jiffies;
+	fence->start = fence->head = jiffies;
 	fence->queue = q;
 	dma_fence_get(&fence->base); /* pending list reference */
 	spin_lock_irqsave(&cp->fence_lock, flags);
