@@ -249,6 +249,16 @@ export BDF=0000:01:00.0
 sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
 ```
 
+## Gallery
+
+All rendered by the Apex GPU on the Kintex-7, recorded from the demos in
+[step 8](#8-run-more-demos).
+
+| Apex Compute cube | vkmark shading (Phong) | vkmark texture (16x anisotropy) |
+| :---: | :---: | :---: |
+| <img src="media/kintex7_apex_cube.gif" width="240"> | <img src="media/kintex7_shading.gif" width="240"> | <img src="media/kintex7_texture.gif" width="240"> |
+| `build/apex-cube/vkcube` | `vkmark -b shading:shading=phong` | `vkmark -b texture:anisotropy=16` |
+
 ## Compare With an Integrated Intel GPU
 
 Both devices are in the same Ubuntu 24.04 host: the Kintex-7 board with the
