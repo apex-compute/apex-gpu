@@ -35,11 +35,11 @@ encrypted for the board's key.
 
 ## Prerequisites
 
-- A Kintex-7 board from Apex Compute in a PCIe slot.
+- A Kintex-7 board from Apex Compute in a PCIe slot that is x4 or wider and
+  PCIe Gen2 or newer. The board's link is Gen2 x4.
 - An x86-64 host running Ubuntu 24.04, with `sudo` and internet access.
 - Linux 6.11 or newer (tested on 6.11). Check with `uname -r`.
-- Secure Boot disabled, or a way to sign kernel modules. Check with
-  `mokutil --sb-state`.
+- The BIOS and kernel settings below.
 - An X11 display for the cube's window: a desktop on the host, or a remote
   desktop session.
 
@@ -48,6 +48,43 @@ encrypted for the board's key.
 > ```bash
 > sudo apt install linux-generic-hwe-24.04
 > ```
+
+## BIOS and Kernel Settings
+
+Set these in the BIOS (UEFI firmware setup) before installing. Menu names
+differ between vendors; the usual names are in brackets.
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Secure Boot | Disabled | The kernel driver is built on the host and is not signed; with Secure Boot on, `insmod` fails with `Key was rejected by service`. |
+| IOMMU (Intel: VT-d, AMD: AMD-Vi or IOMMU) | Enabled | The driver needs the IOMMU to translate the card's memory accesses; without it the probe fails with `a translated IOMMU domain is required`. |
+| Above 4G Decoding (64-bit MMIO, Above 4GB MMIO) | Enabled | The driver resizes the card's BAR2 to 2 GiB, which the host places above 4 GiB. The BAR starts at 256 MiB, so the host boots either way. |
+| Resizable BAR (Re-Size BAR Support) | Enabled, if the BIOS has it | Optional: the driver resizes BAR2 itself, but some firmware only reserves room above 4 GiB with it on. |
+| PCIe slot link speed | Auto (or Gen2 or higher) | The board links at Gen2 x4 (5 GT/s, 2 GB/s per direction). |
+
+Check them from Linux after boot:
+
+```bash
+# Secure Boot: "SecureBoot disabled"
+mokutil --sb-state
+
+# IOMMU: lists dmar* (Intel) or ivhd* (AMD) units
+ls /sys/class/iommu/
+
+# The card's link: "Speed 5GT/s, Width x4"
+sudo lspci -vv -d 10ee: | grep -E "^[0-9a-f]|LnkSta:"
+```
+
+If `/sys/class/iommu/` is empty with the IOMMU enabled in the BIOS, turn it on
+in the kernel command line and reboot. Do not add `iommu=pt` (passthrough): the
+driver needs a translating IOMMU.
+
+```bash
+# Intel (AMD hosts enable it by default once the BIOS has it on)
+sudo sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT="/&intel_iommu=on /' /etc/default/grub
+sudo update-grub
+sudo reboot
+```
 
 ## Installation
 
@@ -103,6 +140,10 @@ ls /dev/dri/renderD*
 
 > **Tip:** If `insmod` fails with `Key was rejected by service`, Secure Boot is
 > on: disable it in the firmware setup, or sign the module.
+
+> **Tip:** If `sudo dmesg | grep apex` shows `a translated IOMMU domain is
+> required`, the IOMMU is off or in passthrough mode: see
+> [BIOS and Kernel Settings](#bios-and-kernel-settings).
 
 > **Tip:** On kernels older than 6.18 the driver can fail to probe with error
 > `-16` (`sudo dmesg | grep apex`). Resize BAR2 to 2 GiB and bind it again:
