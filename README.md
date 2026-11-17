@@ -39,8 +39,8 @@ Run the remaining steps from the `apex-gpu` folder.
 Find the card and program the image into its GPU slot (a few minutes):
 
 ```sh
-lspci -D -d 10ee:                 # the card's address, e.g. 0000:01:00.0
-export BDF=0000:01:00.0           # replace with your card's address
+lspci -D -nn -d 10ee:             # the card is 10ee:7024 (factory image) or 10ee:a15e (GPU image)
+export BDF=0000:01:00.0           # replace with the card's address
 sudo python3 -I tools/apex_flash.py program image/gpu_k7_flash.bin --slot gpu --bdf $BDF
 sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
 lspci -s $BDF -n                  # the GPU image shows up as 10ee:a15e
