@@ -18,14 +18,13 @@ jobs:
       - name: Check checksums
         run: |
           (cd image && sha256sum -c SHA256SUMS)
-          (cd vulkan && sha256sum -c SHA256SUMS)
       - name: Package
         env:
           TAG: ${{ inputs.tag }}
         run: |
           name=apex-gpu-k7-$TAG
           mkdir -p dist/$name
-          cp -r README.md LICENSE driver tools image vulkan dist/$name/
+          cp -r README.md LICENSE driver tools image dist/$name/
           tar -C dist -czf dist/$name.tar.gz $name
           (cd dist && sha256sum $name.tar.gz > $name.tar.gz.sha256)
       - name: Publish

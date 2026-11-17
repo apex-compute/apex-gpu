@@ -7,30 +7,32 @@ A Vulkan 1.4 GPU for the AMD Kintex-7 (`xc7k480t`) PCIe board.
 | `image/` | GPU image for the board's flash |
 | `tools/` | `apex_flash.py`, which programs and boots the flash over PCIe |
 | `driver/` | Linux kernel driver (`apex_pci`) |
-| `vulkan/` | Vulkan driver (ICD) for x86-64 Linux, prebuilt |
 
 The steps below take a new host from a fresh install to `vkcube` spinning on
-the card. Steps 1–7 use the prebuilt Vulkan driver in `vulkan/`; step 8
-builds it from source. The kernel driver is built from source in step 4. The
-GPU image is prebuilt only: it is encrypted for the board's key.
+the card. You build both drivers yourself: the kernel driver from `driver/`,
+and the Vulkan driver from the `mesa-kintex7` branch of
+[apex-compute/mesa](https://github.com/apex-compute/mesa). The GPU image is
+prebuilt: it is encrypted for the board's key.
 
 ## 1. What you need
 
 - A Kintex-7 board from Apex Compute in a PCIe slot.
 - An x86-64 host running Ubuntu 24.04 (other recent Linux distributions work
   with the equivalent packages), with `sudo` and internet access.
-- An X11 display for the window: a desktop on the host, or a remote desktop
-  session (step 7).
+- An X11 display for the cube's window: a desktop on the host, or a remote
+  desktop session (step 8).
 
 ## 2. Install the host packages and get the repository
 
 ```sh
 sudo apt update
-sudo apt install git build-essential linux-headers-$(uname -r) python3 \
+sudo apt install git curl build-essential linux-headers-$(uname -r) python3 \
   pciutils libvulkan1 vulkan-tools xvfb
 git clone https://github.com/apex-compute/apex-gpu.git
 cd apex-gpu
 ```
+
+Run the remaining steps from the `apex-gpu` folder.
 
 ## 3. Flash the GPU image
 
@@ -47,7 +49,7 @@ lspci -s $BDF -n                  # the GPU image shows up as 10ee:a15e
 Do not reboot or power off the host while programming. Programming is needed
 once; the image stays in the flash.
 
-## 4. Load the kernel driver
+## 4. Build and load the kernel driver
 
 ```sh
 make -C driver
@@ -72,17 +74,45 @@ sudo usermod -aG render $USER
 
 Log out and back in (or start a new SSH session) so the group applies.
 
-## 6. Check Vulkan
+## 6. Build the Vulkan driver
+
+The Vulkan driver is the Apex driver in Mesa. Mesa needs meson 1.4 or newer and
+Rust 1.85 or newer, which are newer than the Ubuntu 24.04 packages. Mesa is
+cloned next to `apex-gpu`; the build takes a few minutes:
 
 ```sh
-export VK_DRIVER_FILES=$PWD/vulkan/apex_icd.x86_64.json
+sudo apt install pkg-config ninja-build pipx bison flex \
+  python3-mako python3-yaml python3-packaging glslang-tools spirv-tools \
+  libdrm-dev libudev-dev libexpat1-dev libzstd-dev zlib1g-dev \
+  libunwind-dev libx11-dev libx11-xcb-dev libxrandr-dev libxshmfence-dev \
+  libxcb1-dev libxcb-dri3-dev libxcb-present-dev libxcb-randr0-dev \
+  libxcb-shm0-dev libxcb-sync-dev libxcb-xfixes0-dev libxcb-keysyms1-dev
+pipx install 'meson>=1.4' && pipx ensurepath && export PATH=$HOME/.local/bin:$PATH
+curl https://sh.rustup.rs -sSf | sh -s -- -y && . "$HOME/.cargo/env"
+
+git clone --depth 1 -b mesa-kintex7 https://github.com/apex-compute/mesa.git ../mesa
+meson setup ../mesa/build ../mesa -Dbuildtype=release -Dstrip=true \
+  -Dapex-compiler=true -Dvulkan-drivers= -Dgallium-drivers= -Dplatforms=x11 \
+  -Dglx=disabled -Degl=disabled -Dgbm=disabled -Dllvm=disabled
+ninja -C ../mesa/build src/apex/vulkan/libvulkan_apex.so \
+  src/apex/vulkan/apex_development_icd.x86_64.json
+```
+
+This builds `libvulkan_apex.so` and its manifest,
+`../mesa/build/src/apex/vulkan/apex_development_icd.x86_64.json`, which the
+next steps use.
+
+## 7. Check Vulkan
+
+```sh
+export VK_DRIVER_FILES=$(realpath ../mesa/build/src/apex/vulkan/apex_development_icd.x86_64.json)
 vulkaninfo --summary              # deviceName = Apex, apiVersion = 1.4.0
 ```
 
-`VK_DRIVER_FILES` points the Vulkan loader at the Apex driver; it is not
+`VK_DRIVER_FILES` points the Vulkan loader at the driver you built; it is not
 installed system-wide, so set it in every shell that runs Vulkan.
 
-## 7. Run vkcube
+## 8. Run vkcube
 
 `vkcube` draws a spinning textured cube. The card renders each frame and the
 CPU copies it to an X11 window, because the card has no display path to the
@@ -93,7 +123,7 @@ Without a display, render 300 frames into a virtual X server; it exits with
 status 0:
 
 ```sh
-export VK_DRIVER_FILES=$PWD/vulkan/apex_icd.x86_64.json
+export VK_DRIVER_FILES=$(realpath ../mesa/build/src/apex/vulkan/apex_development_icd.x86_64.json)
 export MESA_VK_WSI_DEBUG=sw
 xvfb-run -a vkcube --c 300 --width 512 --height 512; echo "exit $?"
 ```
@@ -101,7 +131,7 @@ xvfb-run -a vkcube --c 300 --width 512 --height 512; echo "exit $?"
 To watch it, run it in an X11 desktop on the host:
 
 ```sh
-export VK_DRIVER_FILES=$PWD/vulkan/apex_icd.x86_64.json
+export VK_DRIVER_FILES=$(realpath ../mesa/build/src/apex/vulkan/apex_development_icd.x86_64.json)
 export MESA_VK_WSI_DEBUG=sw
 vkcube --width 512 --height 512   # prints: Selected GPU 0: Apex, type: DiscreteGpu
 ```
@@ -116,38 +146,10 @@ sudo apt install xrdp xterm openbox
 
 Close the window to stop it.
 
-## 8. Build the Vulkan driver from source
-
-The Vulkan driver is the Apex driver in Mesa, on the `mesa-kintex7` branch of
-[apex-compute/mesa](https://github.com/apex-compute/mesa). Mesa needs meson
-1.4 or newer and Rust 1.85 or newer, which are newer than the Ubuntu 24.04
-packages. Run these from the `apex-gpu` folder; Mesa is cloned next to it:
-
-```sh
-sudo apt install build-essential pkg-config ninja-build pipx bison flex \
-  python3-mako python3-yaml python3-packaging glslang-tools spirv-tools \
-  libdrm-dev libudev-dev libexpat1-dev libzstd-dev zlib1g-dev \
-  libunwind-dev libx11-dev libx11-xcb-dev libxrandr-dev libxshmfence-dev \
-  libxcb1-dev libxcb-dri3-dev libxcb-present-dev libxcb-randr0-dev \
-  libxcb-shm0-dev libxcb-sync-dev libxcb-xfixes0-dev libxcb-keysyms1-dev
-pipx install 'meson>=1.4' && pipx ensurepath && export PATH=$HOME/.local/bin:$PATH
-curl https://sh.rustup.rs -sSf | sh -s -- -y && . "$HOME/.cargo/env"
-
-git clone --depth 1 -b mesa-kintex7 https://github.com/apex-compute/mesa.git ../mesa
-meson setup ../mesa/build ../mesa -Dbuildtype=release -Dstrip=true \
-  -Dapex-compiler=true -Dvulkan-drivers= -Dgallium-drivers= -Dplatforms=x11 \
-  -Dglx=disabled -Degl=disabled -Dgbm=disabled -Dllvm=disabled
-ninja -C ../mesa/build src/apex/vulkan/libvulkan_apex.so
-cp ../mesa/build/src/apex/vulkan/libvulkan_apex.so vulkan/
-```
-
-The build takes a few minutes. Then run steps 6 and 7 again: they now use the
-driver you built.
-
 ## After a power cycle
 
 The board loads its default image at power-up. Boot the GPU slot again (no
-need to program it), then repeat step 4:
+need to program it), then load the kernel driver (step 4):
 
 ```sh
 sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
