@@ -7,6 +7,11 @@
 </p>
 
 <p align="center">
+  <img src="media/kintex7_apex_cube.gif" alt="vkcube with the Apex Compute logo, rendered on the Kintex-7" width="360"><br>
+  <code>vkcube</code> with the Apex Compute logo, rendered by the Apex GPU on the Kintex-7
+</p>
+
+<p align="center">
   <a href="https://discord.gg/SqprdvQXnC"><img src="https://img.shields.io/badge/Discord-Join%20Us-7289da?logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
@@ -26,6 +31,8 @@ encrypted for the board's key.
 | `demos/` | Extra demos, such as the Apex Compute cube |
 | `requirements.txt` | Ubuntu packages for building and running the drivers |
 | `FLASH.md` | Switching between the factory and GPU images |
+| `COMPARISON.md` | The Kintex-7 compared with an integrated Intel GPU |
+| `media/` | Images for this guide |
 
 ## Prerequisites
 
@@ -242,6 +249,11 @@ cd apex-gpu
 export BDF=0000:01:00.0
 sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
 ```
+
+## Compare With Another GPU
+
+How the Kintex-7 compares with the integrated Intel GPU in the same host
+(`vkmark`, limits, features, PCIe bandwidth): see [COMPARISON.md](COMPARISON.md).
 
 ## Switch Images and Update the Factory Image
 
