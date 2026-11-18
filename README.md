@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  <img src="media/kintex7_apex_cube.gif" alt="vkcube with the Apex Compute logo, rendered on the Kintex-7" width="360"><br>
-  <code>vkcube</code> with the Apex Compute logo, rendered by the Apex GPU on the Kintex-7
+  <img src="media/kintex7_vkcube.gif" alt="vkcube rendered on the Kintex-7" width="360"><br>
+  <code>vkcube</code>, rendered by the Apex GPU on the Kintex-7
 </p>
 
 <p align="center">
@@ -28,7 +28,6 @@ encrypted for the board's key.
 | `tools/` | `apex_flash.py`, which programs and boots the flash over PCIe |
 | `driver/` | Linux kernel driver (`apex_pci`) |
 | `mesa/` | Vulkan driver source: Mesa from the `mesa-kintex7` branch of [apex-compute/mesa](https://github.com/apex-compute/mesa) (submodule) |
-| `demos/` | Extra demos, such as the Apex Compute cube |
 | `requirements.txt` | Ubuntu packages for building and running the drivers |
 | `FLASH.md` | Booting and flashing the unified-engine and GPU images |
 | `media/` | Images for this guide |
@@ -271,15 +270,6 @@ vkmark --winsys xcb -p fifo
 vkmark --winsys xcb -p fifo -b cube -b texture -b shading:shading=phong
 ```
 
-**Apex Compute cube**: `vkcube` with the Apex Compute logo as its texture.
-`demos/apex-cube/build.sh` fetches Khronos Vulkan-Tools, swaps in the logo and
-builds it into `build/apex-cube/vkcube`:
-
-```bash
-demos/apex-cube/build.sh
-build/apex-cube/vkcube --width 512 --height 512
-```
-
 ---
 
 ## After a Power Cycle
@@ -296,12 +286,12 @@ sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
 ## Gallery
 
 All rendered by the Apex GPU on the Kintex-7, recorded from the demos in
-[step 8](#8-run-more-demos).
+[step 7](#7-run-vkcube) and [step 8](#8-run-more-demos).
 
-| Apex Compute cube | vkmark shading (Phong) | vkmark texture (16x anisotropy) |
+| vkcube | vkmark shading (Phong) | vkmark texture (16x anisotropy) |
 | :---: | :---: | :---: |
-| <img src="media/kintex7_apex_cube.gif" width="240"> | <img src="media/kintex7_shading.gif" width="240"> | <img src="media/kintex7_texture.gif" width="240"> |
-| `build/apex-cube/vkcube` | `vkmark -b shading:shading=phong` | `vkmark -b texture:anisotropy=16` |
+| <img src="media/kintex7_vkcube.gif" width="240"> | <img src="media/kintex7_shading.gif" width="240"> | <img src="media/kintex7_texture.gif" width="240"> |
+| `vkcube` | `vkmark -b shading:shading=phong` | `vkmark -b texture:anisotropy=16` |
 
 ## Compare With an Integrated Intel GPU
 
