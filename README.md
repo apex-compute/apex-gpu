@@ -293,6 +293,9 @@ export BDF=0000:01:00.0
 sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
 ```
 
+Then check the card with the
+[smoke test in FLASH.md](FLASH.md#3-smoke-test-the-gpu-image).
+
 ## Gallery
 
 All rendered by the Apex GPU on the Kintex-7, recorded from the demos in
