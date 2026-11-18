@@ -11,7 +11,7 @@ build-essential
 python3
 pciutils
 
-# Build the Vulkan driver (Mesa, mesa-kintex7 branch)
+# Build the Vulkan driver (the mesa/ submodule)
 pkg-config
 ninja-build
 pipx
