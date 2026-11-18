@@ -30,7 +30,7 @@ encrypted for the board's key.
 | `mesa/` | Vulkan driver source: Mesa from the `mesa-kintex7` branch of [apex-compute/mesa](https://github.com/apex-compute/mesa) (submodule) |
 | `demos/` | Extra demos, such as the Apex Compute cube |
 | `requirements.txt` | Ubuntu packages for building and running the drivers |
-| `FLASH.md` | Switching between the factory and GPU images |
+| `FLASH.md` | Booting and flashing the unified-engine and GPU images |
 | `media/` | Images for this guide |
 
 ## Prerequisites
@@ -105,11 +105,14 @@ Run the remaining steps from the `apex-gpu` folder.
 Find the card, then program the image into its GPU slot (a few minutes):
 
 ```bash
-# The card is 10ee:7024 (factory image) or 10ee:a15e (GPU image)
+# The card is 10ee:7024 (unified-engine image) or 10ee:a15e (GPU image)
 lspci -D -nn -d 10ee:
 
 # Replace with the card's address
 export BDF=0000:01:00.0
+
+# Only on 10ee:7024: boot the GPU slot first, since unified-engine cannot program it
+sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
 
 sudo python3 -I tools/apex_flash.py program image/gpu_k7_flash.bin --slot gpu --bdf $BDF
 sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
@@ -119,7 +122,8 @@ lspci -s $BDF -n
 ```
 
 > **Warning:** Do not reboot or power off the host while programming.
-> Programming is needed once; the image stays in the flash.
+> Programming is needed once; the image stays in the flash. To boot or flash
+> either image later, see [FLASH.md](FLASH.md).
 
 ### 3. Build and Load the Kernel Driver
 
@@ -280,7 +284,7 @@ build/apex-cube/vkcube --width 512 --height 512
 
 ## After a Power Cycle
 
-The board loads its factory image at power-up. Boot the GPU slot again (no
+The board loads the unified-engine image at power-up. Boot the GPU slot again (no
 need to program it), then load the kernel driver ([step 3](#3-build-and-load-the-kernel-driver)):
 
 ```bash
@@ -379,10 +383,12 @@ scene renders correctly on it.
 | `pointSizeRange` | 0.125 – 255.875 | 1 – 255.875 |
 | `lineWidthRange` | 0 – 8 | 1 – 16 |
 
-## Switch Images and Update the Factory Image
+## Boot and Flash the unified-engine and GPU Images
 
-The board's flash also holds a factory image. To switch between it and the GPU
-image, or to update it, see [FLASH.md](FLASH.md).
+The board's flash also holds the
+[unified-engine](https://github.com/apex-compute/unified-engine) image. To boot
+one image from the other, or to flash a new image into either slot, see
+[FLASH.md](FLASH.md).
 
 ## License
 

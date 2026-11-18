@@ -6,8 +6,8 @@
     apex_flash.py verify  IMAGE.bin --slot gpu --bdf BDF
     apex_flash.py boot    --slot gpu --bdf BDF
 
-The flash holds two images: the factory image at 0, which the FPGA loads at
-power-up and falls back to, and the GPU image at 32 MiB. `program` erases,
+The flash holds two images: the unified-engine image at 0, which the FPGA
+loads at power-up and falls back to, and the GPU image at 32 MiB. `program` erases,
 writes and reads back the GPU slot. `boot` reloads the FPGA from the slot and
 rescans the bus; the card returns as 10ee:a15e. `status` reports how the FPGA
 last configured.
@@ -25,12 +25,12 @@ import sys
 import time
 
 PCI_COMMAND, PCI_COMMAND_MEMORY = 0x04, 0x2
-GPU_DEVICE, ANDROMEDA_DEVICE = "0xa15e", "0x7024"
+GPU_DEVICE, UNIFIED_ENGINE_DEVICE = "0xa15e", "0x7024"
 MAGIC = 0x41504558
 PROFILE_U50, PROFILE_K7 = 2, 3
 FLASH_BYTES = 64 << 20
 SLOT_BYTES = 32 << 20
-SLOTS = {"andromeda": 0x0000000, "gpu": 0x2000000}
+SLOTS = {"unified-engine": 0x0000000, "gpu": 0x2000000}
 BLOCK_BYTES = 256 << 10
 BUFFER_BYTES = 1024
 RELOAD_SECONDS = 8
@@ -45,7 +45,7 @@ C_ID, C_WBSTAR, C_IPROG, C_BOOTSTS, C_STATUS = 0x000, 0x004, 0x008, 0x00C, 0x010
 CAP_BPI_FLASH = 1 << 10
 WINDOW, WINDOW_BYTES = 0x1000, 0x1000
 L_ID, L_PAGE, L_WBSTAR, L_IPROG = 0xF000, 0xF004, 0xF008, 0xF00C
-# The factory image's warm-boot block.
+# The unified-engine image's warm-boot block.
 A_BASE = 0x02030000
 A_ID, A_WBSTAR, A_CTRL = 0x0, 0x4, 0x8
 A_ID_VALUE = 0xB0071CA2
@@ -76,8 +76,8 @@ class Card:
         if not os.path.exists(self.path):
             sys.exit(f"{bdf} is not present")
         ids = tuple(open(f"{self.path}/{n}").read().strip() for n in ("vendor", "device"))
-        if ids not in (("0x10ee", GPU_DEVICE), ("0x10ee", ANDROMEDA_DEVICE)):
-            sys.exit(f"{bdf} is {ids[0]}:{ids[1]}, neither the Apex GPU nor andromeda")
+        if ids not in (("0x10ee", GPU_DEVICE), ("0x10ee", UNIFIED_ENGINE_DEVICE)):
+            sys.exit(f"{bdf} is {ids[0]}:{ids[1]}, neither the Apex GPU nor unified-engine")
         if os.path.exists(f"{self.path}/driver"):
             sys.exit(f"{bdf} has a driver bound; unload it first")
         # Set Memory Space in the command register through config, which a udev
@@ -93,11 +93,11 @@ class Card:
                      for start, end, _ in (map(lambda x: int(x, 16), line.split()) for line in f)]
         self.flash = None
         self.page = None
-        if ids[1] == ANDROMEDA_DEVICE:
-            self.kind = "andromeda"
+        if ids[1] == UNIFIED_ENGINE_DEVICE:
+            self.kind = "unified-engine"
             self.bar = mapping(self.path, 0, sizes[0])
             if self.reg(A_BASE + A_ID) != A_ID_VALUE:
-                sys.exit(f"andromeda image without icap_warmboot (ID {self.reg(A_BASE + A_ID):#010x})")
+                sys.exit(f"unified-engine image without icap_warmboot (ID {self.reg(A_BASE + A_ID):#010x})")
             return
         bar0 = mapping(self.path, 0, 65536)
         if bar0[0] != MAGIC or bar0[2] != PROFILE_K7:
@@ -128,7 +128,7 @@ class Card:
     def control(self, name):
         offsets = {"image-bar": {"wbstar": CONTROL + C_WBSTAR, "iprog": CONTROL + C_IPROG},
                    "legacy": {"wbstar": L_WBSTAR, "iprog": L_IPROG},
-                   "andromeda": {"wbstar": A_BASE + A_WBSTAR, "iprog": A_BASE + A_CTRL}}
+                   "unified-engine": {"wbstar": A_BASE + A_WBSTAR, "iprog": A_BASE + A_CTRL}}
         return offsets[self.kind][name]
 
     def _window(self, address):
@@ -176,7 +176,7 @@ def decode_bootsts(value):
 
 
 def status(card):
-    names = {"image-bar": "GPU image, image BAR (BAR5)", "andromeda": "andromeda",
+    names = {"image-bar": "GPU image, image BAR (BAR5)", "unified-engine": "unified-engine image",
              "legacy": "older GPU image, BAR0 controls"}
     print(f"{card.bdf}: {names[card.kind]}")
     if card.kind == "image-bar":
@@ -186,7 +186,7 @@ def status(card):
             print(f"BOOTSTS {bootsts:#010x} ({decode_bootsts(bootsts)})")
         else:
             print("BOOTSTS not captured" if ready & 1 else "BOOTSTS read pending")
-    if card.kind != "andromeda":
+    if card.kind != "unified-engine":
         card.command(0, CLEAR_STATUS)
         card.command(0, READ_ID)
         ident = card.flash_read(0)
@@ -303,10 +303,10 @@ def board(bdf):
     if not os.path.exists(path):
         sys.exit(f"{bdf} is not present")
     ids = tuple(open(f"{path}/{n}").read().strip() for n in ("vendor", "device"))
-    if ids == ("0x10ee", ANDROMEDA_DEVICE):
+    if ids == ("0x10ee", UNIFIED_ENGINE_DEVICE):
         return "k7"
     if ids != ("0x10ee", GPU_DEVICE):
-        sys.exit(f"{bdf} is {ids[0]}:{ids[1]}, neither the Apex GPU nor andromeda")
+        sys.exit(f"{bdf} is {ids[0]}:{ids[1]}, neither the Apex GPU nor unified-engine")
     # A bound apex_pci publishes the profile it read from BAR0.
     if os.path.exists(f"{path}/profile"):
         profile = int(open(f"{path}/profile").read())
@@ -491,8 +491,9 @@ def main():
         parser.error("boot takes --slot or --wbstar, not --offset")
 
     card = Card(args.bdf)
-    if card.kind == "andromeda" and args.command in ("program", "verify"):
-        sys.exit("andromeda images only warm-boot here; program the flash from a GPU image")
+    if card.kind == "unified-engine" and args.command in ("program", "verify"):
+        sys.exit("the unified-engine image can only warm-boot here; boot the GPU image "
+                 "(boot --slot gpu) and program the flash from it")
     if args.command == "status":
         status(card)
     elif args.command == "program":
