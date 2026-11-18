@@ -8,3 +8,4 @@ modules.order
 Module.symvers
 __pycache__/
 build/
+mesa/

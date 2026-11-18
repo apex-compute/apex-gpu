@@ -19,7 +19,7 @@
 
 This guide takes a new host from a fresh install to `vkcube` spinning on the
 card. You build both drivers yourself: the kernel driver from `driver/`, and
-the Vulkan driver from the `mesa/` submodule. The GPU image is prebuilt and
+the Vulkan driver from the `mesa-kintex7` branch of Mesa. The GPU image is prebuilt and
 encrypted for the board's key.
 
 | Folder | Contents |
@@ -27,7 +27,6 @@ encrypted for the board's key.
 | `image/` | GPU image for the board's flash |
 | `tools/` | `apex_flash.py`, which programs and boots the flash over PCIe |
 | `driver/` | Linux kernel driver (`apex_pci`) |
-| `mesa/` | Vulkan driver source: the `mesa-kintex7` branch of [apex-compute/mesa](https://github.com/apex-compute/mesa) (submodule) |
 | `demos/` | Extra demos, such as the Apex Compute cube |
 | `requirements.txt` | Ubuntu packages for building and running the drivers |
 | `FLASH.md` | Switching between the factory and GPU images |
@@ -170,9 +169,11 @@ export BDF=0000:01:00.0
 
 ### 5. Build the Vulkan Driver
 
-Mesa needs meson 1.4 or newer and Rust 1.85 or newer, which are newer than the
-Ubuntu 24.04 packages. The submodule fetch downloads only the pinned commit;
-the build takes a few minutes:
+The Vulkan driver is the Apex driver in Mesa, on the `mesa-kintex7` branch of
+[apex-compute/mesa](https://github.com/apex-compute/mesa). Clone it once into
+`mesa/` (Git ignores that folder) and build it. Mesa needs meson 1.4 or newer
+and Rust 1.85 or newer, which are newer than the Ubuntu 24.04 packages; the
+build takes a few minutes:
 
 ```bash
 # meson and Rust
@@ -180,7 +181,7 @@ pipx install 'meson>=1.4' && pipx ensurepath && export PATH=$HOME/.local/bin:$PA
 curl https://sh.rustup.rs -sSf | sh -s -- -y && . "$HOME/.cargo/env"
 
 # Fetch and build the Vulkan driver
-git submodule update --init mesa
+git clone --depth 1 -b mesa-kintex7 https://github.com/apex-compute/mesa.git mesa
 meson setup build/mesa mesa -Dbuildtype=release -Dstrip=true \
   -Dapex-compiler=true -Dvulkan-drivers= -Dgallium-drivers= -Dplatforms=x11 \
   -Dglx=disabled -Degl=disabled -Dgbm=disabled -Dllvm=disabled
@@ -190,12 +191,6 @@ ninja -C build/mesa src/apex/vulkan/libvulkan_apex.so \
 
 This builds `libvulkan_apex.so` and its manifest,
 `build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json`.
-
-> **Tip:** To move to the newest `mesa-kintex7`, update the submodule and run
-> the `ninja` command again:
-> ```bash
-> git submodule update --remote mesa
-> ```
 
 ### 6. Check Vulkan
 
