@@ -69,9 +69,8 @@ lspci -nnk -s $BDF
 
 If the `apex_gpu` driver is already loaded, it binds on its own after the
 rescan. If it is not loaded, load it as in
-[step 3 of the README](README.md#3-build-and-load-the-kernel-driver), then
-check it with `vulkaninfo --summary`
-([step 6](README.md#6-check-vulkan)).
+[step 3 of the README](README.md#3-build-and-load-the-kernel-driver). Then run the
+[smoke test](#3-smoke-test-the-gpu-image).
 
 > **Tip:** If the probe fails with `-16` (`sudo dmesg | grep apex`), resize
 > BAR2 to 2 GiB and bind it again:
@@ -97,6 +96,42 @@ sudo python3 -I tools/apex_flash.py boot --slot unified-engine --bdf $BDF
 # 10ee:7024; the xdma driver binds if installed
 lspci -nnk -s $BDF
 ```
+
+### 3. Smoke Test the GPU Image
+
+Run this after every boot into the GPU image, once the `apex_gpu` driver is
+bound. It needs the Vulkan driver from
+[step 5 of the README](README.md#5-build-the-vulkan-driver) and takes about
+40 seconds:
+
+```bash
+# The GPU image, with "Kernel driver in use: apex_gpu"
+lspci -nnk -s $BDF
+
+# Its render node: card<N> and renderD<N>
+ls /sys/bus/pci/devices/$BDF/drm/
+
+# The driver started the GPU: "command processor: 64 queues, ..." and
+# "profile=3 memory=2048 MiB"
+sudo dmesg | grep "apex_gpu $BDF" | tail -2
+
+# Vulkan finds it: deviceName = Apex, apiVersion = 1.4.0
+export VK_DRIVER_FILES=$PWD/build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json
+export MESA_VK_WSI_DEBUG=sw
+vulkaninfo --summary | grep -E "deviceName|apiVersion"
+
+# Render 300 frames without a display: about 30 seconds, then "exit 0"
+xvfb-run -a vkcube --c 300 --width 512 --height 512; echo "exit $?"
+```
+
+If a check fails:
+
+| Check | If it fails |
+| --- | --- |
+| `lspci` shows `10ee:7024` | The FPGA fell back to unified-engine: see the last tip in [step 1](#1-boot-the-gpu-image-from-unified-engine) |
+| No `Kernel driver in use` or no render node | Load the driver ([step 3 of the README](README.md#3-build-and-load-the-kernel-driver)); on `-16`, use the BAR2 tip in [step 1](#1-boot-the-gpu-image-from-unified-engine) |
+| `vulkaninfo` lists no Apex device | Check `VK_DRIVER_FILES` and that your user is in the `render` group ([step 4 of the README](README.md#4-give-your-user-access-to-the-card)) |
+| `vkcube` does not exit 0 | Check `sudo dmesg \| grep apex` for errors |
 
 ---
 
@@ -127,6 +162,8 @@ sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
 # 10ee:a15e
 lspci -nnk -s $BDF
 ```
+
+Then run the [smoke test](#3-smoke-test-the-gpu-image).
 
 > **Note:** If the GPU slot is empty or does not configure, the card cannot
 > boot the GPU image, and the GPU slot has to be programmed once over JTAG with
@@ -161,6 +198,8 @@ lspci -nnk -s $BDF
 echo $BDF | sudo tee /sys/bus/pci/drivers/xdma/unbind
 sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
 ```
+
+Then run the [smoke test](#3-smoke-test-the-gpu-image).
 
 > **Tip:** While unified-engine runs, its own `./update_fpga.sh` also updates
 > slot 0 (see the [unified-engine README](https://github.com/apex-compute/unified-engine#readme)).
