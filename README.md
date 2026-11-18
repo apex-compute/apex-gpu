@@ -121,7 +121,7 @@ sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
 lspci -s $BDF -n
 ```
 
-> **Warning:** Do not reboot or power off the host while programming.
+> **Warning:** Let `program` finish; do not interrupt it.
 > Programming is needed once; the image stays in the flash. To boot or flash
 > either image later, see [FLASH.md](FLASH.md).
 
