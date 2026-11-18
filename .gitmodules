@@ -1,0 +1,4 @@
+[submodule "mesa"]
+	path = mesa
+	url = https://github.com/apex-compute/mesa.git
+	shallow = true

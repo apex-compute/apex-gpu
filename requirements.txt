@@ -1,0 +1,49 @@
+# Ubuntu 24.04 packages to build and run the Apex GPU drivers on the Kintex-7.
+# Install with (from the apex-gpu folder):
+#   sudo apt install linux-headers-$(uname -r) $(grep -v '^#' requirements.txt)
+# Not apt packages, installed by the README: the kernel headers for the running
+# kernel (above), meson >= 1.4 (pipx) and Rust >= 1.85 (rustup).
+
+# Flash the GPU image and build the kernel driver
+git
+curl
+build-essential
+python3
+pciutils
+
+# Build the Vulkan driver (the mesa/ submodule)
+pkg-config
+ninja-build
+pipx
+bison
+flex
+python3-mako
+python3-yaml
+python3-packaging
+glslang-tools
+spirv-tools
+libdrm-dev
+libudev-dev
+libexpat1-dev
+libzstd-dev
+zlib1g-dev
+libunwind-dev
+libx11-dev
+libx11-xcb-dev
+libxrandr-dev
+libxshmfence-dev
+libxcb1-dev
+libxcb-dri3-dev
+libxcb-present-dev
+libxcb-randr0-dev
+libxcb-shm0-dev
+libxcb-sync-dev
+libxcb-xfixes0-dev
+libxcb-keysyms1-dev
+
+# Run Vulkan, vkcube and the demos (cmake builds the Apex Compute cube)
+libvulkan1
+vulkan-tools
+vkmark
+xvfb
+cmake
