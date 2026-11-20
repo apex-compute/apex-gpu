@@ -3,6 +3,11 @@
 </p>
 
 <p align="center">
+  Contributors: Hasan Unlu, Selim Sandal, Tin Nguyen<br>
+  Contact: <a href="mailto:hunlu@apexcompute.com">hunlu@apexcompute.com</a>, <a href="mailto:selim@apexcompute.com">selim@apexcompute.com</a>, <a href="mailto:tin.nguyen@apexcompute.com">tin.nguyen@apexcompute.com</a>
+</p>
+
+<p align="center">
   A Vulkan 1.4 GPU for the AMD Kintex-7 (<code>xc7k480t</code>) PCIe board
 </p>
 
