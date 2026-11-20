@@ -1,0 +1,96 @@
+name: nightly
+
+# The guide on the Kintex-7 every night: build, flash the GPU image, switch
+# between the GPU and unified-engine images, the FLASH.md smoke test and the Vulkan CTS mustpass.
+# Only the schedule and a manual run start it, never a pull request: the job
+# runs on a lab host.
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      mustpass_hours:
+        description: Hours of full-mustpass cases (0 skips them)
+        default: "6"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  kintex7:
+    runs-on: [self-hosted, apex-gpu-k7]
+    timeout-minutes: 600
+    env:
+      NIGHTLY_OUT: ${{ github.workspace }}/build/nightly
+      MUSTPASS_HOURS: ${{ inputs.mustpass_hours || '6' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          # Keep build/ (the Mesa build) between nights.
+          clean: false
+
+      - name: Reset results
+        run: rm -rf "$NIGHTLY_OUT"
+
+      - name: Build
+        id: build
+        run: .github/nightly/nightly.sh build
+
+      - name: Flash the GPU image
+        id: program
+        run: .github/nightly/nightly.sh program
+
+      - name: Switch between the GPU and unified-engine images
+        id: switch
+        run: .github/nightly/nightly.sh switch
+
+      - name: Smoke test
+        id: smoke
+        run: .github/nightly/nightly.sh smoke
+
+      - name: CTS mandatory
+        id: mandatory
+        run: .github/nightly/nightly.sh mandatory
+
+      - name: CTS mustpass slice
+        id: mustpass
+        if: env.MUSTPASS_HOURS != '0'
+        run: .github/nightly/nightly.sh mustpass
+
+      - name: Collect
+        if: always()
+        run: .github/nightly/nightly.sh collect
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ github.run_id }}
+          path: build/nightly
+          retention-days: 30
+
+      # One open issue tracks a failing nightly: opened on the first failed
+      # night, commented on each further one.
+      - name: Report failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let details = '';
+            try { details = fs.readFileSync(`${process.env.NIGHTLY_OUT}/summary.md`, 'utf8').trim(); } catch (e) {}
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = `Nightly failed: ${run}\n\n${details}`;
+            const title = 'Nightly Kintex-7 test failing';
+            const { data: open } = await github.rest.issues.listForRepo({ ...context.repo, state: 'open', labels: 'nightly' });
+            const issue = open.find(i => i.title === title);
+            if (issue)
+              await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body });
+            else
+              await github.rest.issues.create({ ...context.repo, title, body, labels: ['nightly'] });
