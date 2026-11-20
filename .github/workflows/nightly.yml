@@ -93,11 +93,15 @@ jobs:
       # repository has the SLACK_BOT_TOKEN and SLACK_CHANNEL_ID secrets.
       - name: Slack
         if: always() && env.SLACK_BOT_TOKEN != '' && env.SLACK_CHANNEL_ID != ''
+        env:
+          OUTCOME_build: ${{ steps.build.outcome }}
+          OUTCOME_program: ${{ steps.program.outcome }}
+          OUTCOME_switch: ${{ steps.switch.outcome }}
+          OUTCOME_smoke: ${{ steps.smoke.outcome }}
+          OUTCOME_cts: ${{ steps.cts.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          status="${{ job.status }}"
-          run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          text=$(printf 'apex-gpu nightly *%s* on `%s`\n%s\n<%s|run>' "$status" "${GITHUB_SHA:0:7}" \
-            "$(cat "$NIGHTLY_OUT/summary.md" 2>/dev/null)" "$run")
+          text=$(.github/nightly/nightly.sh message)
           python3 -c 'import json,sys; print(json.dumps({"channel": sys.argv[1], "text": sys.argv[2]}))' "$SLACK_CHANNEL_ID" "$text" |
             curl -sS -X POST https://slack.com/api/chat.postMessage \
               -H "Authorization: Bearer $SLACK_BOT_TOKEN" -H 'Content-Type: application/json; charset=utf-8' \

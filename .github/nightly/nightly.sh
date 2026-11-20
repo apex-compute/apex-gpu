@@ -20,7 +20,9 @@ LOCK=/tmp/pcie_ci_hw_$(hostname).lock
 CHUNK=500
 mkdir -p "$OUT" "$STATE"
 
-die() { echo "::error::$*" >&2; summary "- **failed:** $*"; exit 1; }
+die() { echo "::error::$*" >&2; summary "- **failed:** $*"; result "$*"; exit 1; }
+# One line per step for the Slack report: what passed, or why it failed.
+result() { echo "$*" > "$OUT/result_${STEP:-step}.txt"; }
 summary() { echo "$*" | tee -a "$OUT/summary.md" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
 locked() { exec 9< "$LOCK"; flock 9; }
 unlocked() { flock -u 9; exec 9<&-; }
@@ -87,6 +89,7 @@ build() {
 	summary "- image: $(ls image/*.bin | xargs -n1 basename), $kind"
 	summary "- kernel driver: built $built, loaded ${installed:-none}"
 	summary "- Mesa: $(git -C mesa log -1 --format=%h)"
+	result "$(ls image/*.bin | xargs -n1 basename), Mesa $(git -C mesa log -1 --format=%h)"
 }
 
 # FLASH.md Flash mode step 1: program image/*.bin into the GPU slot, verify it,
@@ -110,6 +113,7 @@ program() {
 	bind_gpu
 	unlocked
 	summary "- flash: programmed, verified and booted $(ls image/*.bin | xargs -n1 basename) in the GPU slot; $(grep -o 'BOOTSTS[^)]*)' "$OUT/flash_status_after.txt"): pass"
+	result "$(ls image/*.bin | xargs -n1 basename), BOOTSTS VALID IPROG"
 }
 
 # FLASH.md Boot mode: unified-engine from the GPU image, then the GPU image back.
@@ -130,6 +134,7 @@ switch() {
 	bind_gpu
 	unlocked
 	summary "- switch: GPU -> unified-engine (10ee:7024, driver ${ue_driver:-none}) -> GPU (10ee:a15e, apex_gpu): pass"
+	result "10ee:a15e -> 10ee:7024 -> 10ee:a15e"
 }
 
 # FLASH.md step 3, with the kernel journal in place of sudo dmesg.
@@ -154,6 +159,7 @@ smoke() {
 	grep -q 'apiVersion *= 1\.4' "$log" || die "smoke: Vulkan API version is not 1.4"
 	grep -q '^vkcube exit 0$' "$log" || die "smoke: vkcube did not exit 0 (smoke.log)"
 	summary "- smoke test: 10ee:a15e, apex_gpu, $node, Vulkan Apex 1.4, vkcube 300 frames: pass"
+	result "Vulkan Apex 1.4, vkcube 300 frames"
 }
 
 # Run a case list through deqp-vk in chunks, each under the card lock, and
@@ -197,7 +203,8 @@ cts() {
 	run_cases "$list" "$results"
 	summary "- CTS mandatory and api.smoke ($(wc -l < "$results") cases): $(count "$results")"
 	bad=$(awk '$1 !~ /^(Pass|NotSupported|QualityWarning|CompatibilityWarning)$/' "$results")
-	[ -z "$bad" ] || { summary "$(echo "$bad" | sed 's/^/  - /')"; die "CTS cases failed"; }
+	[ -z "$bad" ] || { summary "$(echo "$bad" | sed 's/^/  - /')"; die "$(echo "$bad" | wc -l) of $(wc -l < "$results") CTS cases failed"; }
+	result "$(count "$results")"
 }
 
 collect() {
@@ -206,4 +213,33 @@ collect() {
 	[ ! -s "$OUT/kernel_errors.txt" ] || summary "- kernel: $(wc -l < "$OUT/kernel_errors.txt") apex_gpu error lines (kernel_errors.txt)"
 }
 
+# The Slack report, in the style of andromeda's PCIe Night Run: a verdict, one
+# line per step from its outcome (OUTCOME_<step>, from the workflow) and its
+# result line, then the branch, the commit and the run.
+message() {
+	local step label outcome detail icon line lines="" failed=0 unfinished=0 verdict
+	for step in build:build program:flash switch:"switch GPU ↔ unified-engine" smoke:"smoke test" cts:"CTS mandatory + api.smoke"; do
+		label=${step#*:}; step=${step%%:*}
+		outcome=$(printenv "OUTCOME_$step" || true)
+		detail=$(cat "$OUT/result_$step.txt" 2>/dev/null || true)
+		case $outcome in
+		success) icon=":white_check_mark:" ;;
+		failure) icon=":x:"; failed=$((failed + 1)) ;;
+		skipped | "") icon=":black_square_button:"; outcome="not run"; detail=""; unfinished=$((unfinished + 1)) ;;
+		*) icon=":warning:"; unfinished=$((unfinished + 1)) ;;
+		esac
+		line="$icon $label — $outcome"
+		[ -z "$detail" ] || line+=" ($detail)"
+		lines+="$line"$'\n'
+	done
+	# Steps after a failed one do not run: the night is FAILED, not incomplete.
+	if [ $failed != 0 ]; then verdict=FAILED
+	elif [ $unfinished != 0 ]; then verdict="INCOMPLETE ($unfinished not finished)"
+	else verdict=PASSED; fi
+	printf '*apex-gpu Nightly: %s*\n\n%s\nBranch: `%s`\nCommit: `%s`\n<%s|View nightly run>\n' \
+		"$verdict" "$lines" "${GITHUB_REF_NAME:-$(git rev-parse --abbrev-ref HEAD)}" \
+		"$(git rev-parse --short=12 HEAD)" "${RUN_URL:-}"
+}
+
+STEP=$1
 "$@"
