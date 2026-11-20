@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 120
     env:
       NIGHTLY_OUT: ${{ github.workspace }}/build/nightly
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -86,3 +87,15 @@ jobs:
               await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body });
             else
               await github.rest.issues.create({ ...context.repo, title, body, labels: ['nightly'] });
+
+      # Every night's result, pass or fail, when the repository has the
+      # SLACK_WEBHOOK_URL secret.
+      - name: Slack
+        if: always() && env.SLACK_WEBHOOK_URL != ''
+        run: |
+          status="${{ job.status }}"
+          run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          text=$(printf 'apex-gpu nightly *%s* on `%s`\n%s\n<%s|run>' "$status" "${GITHUB_SHA:0:7}" \
+            "$(cat "$NIGHTLY_OUT/summary.md" 2>/dev/null)" "$run")
+          python3 -c 'import json,sys; print(json.dumps({"text": sys.argv[1]}))' "$text" |
+            curl -sS -X POST -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK_URL"
