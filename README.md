@@ -113,7 +113,7 @@ export BDF=0000:01:00.0
 # Only on 10ee:7024: boot the GPU slot first, since unified-engine cannot program it
 sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
 
-sudo python3 -I tools/apex_flash.py program image/update_f00e0428.bin --slot gpu --bdf $BDF
+sudo python3 -I tools/apex_flash.py program image/*.bin --slot gpu --bdf $BDF
 sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
 
 # The GPU image shows up as 10ee:a15e
