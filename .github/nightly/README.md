@@ -11,10 +11,10 @@ never start it. Each night it:
 3. Switches the card to unified-engine and back to the GPU image
    ([FLASH.md Boot mode](../../FLASH.md#boot-mode)).
 4. Runs the [smoke test](../../FLASH.md#3-smoke-test-the-gpu-image).
-5. Runs the Vulkan CTS mandatory list: every case must pass or be unsupported.
-6. Runs the next slice of the full CTS mustpass for six hours, continuing where
-   the last night stopped. Failed cases are listed; a crash, timeout or lost
-   device fails the night.
+5. Runs a short Vulkan CTS check, the mandatory list and `dEQP-VK.api.smoke.*`
+   (31 cases, a few minutes): every case must pass or be unsupported.
+
+The whole run takes about 15 minutes.
 
 The results are on the run page and in its `nightly-<run>` artifact. A failed
 night opens (or comments on) the issue labelled `nightly`.
