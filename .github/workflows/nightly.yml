@@ -7,7 +7,8 @@ name: nightly
 # runs on a lab host.
 on:
   schedule:
-    - cron: "0 6 * * *"
+    # 01:00 Pacific standard time (02:00 in daylight time).
+    - cron: "0 9 * * *"
   workflow_dispatch:
 
 permissions:
@@ -24,6 +25,8 @@ jobs:
     timeout-minutes: 120
     env:
       NIGHTLY_OUT: ${{ github.workspace }}/build/nightly
+      SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+      SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -85,3 +88,19 @@ jobs:
               await github.rest.issues.createComment({ ...context.repo, issue_number: issue.number, body });
             else
               await github.rest.issues.create({ ...context.repo, title, body, labels: ['nightly'] });
+
+      # Every night's result, pass or fail, posted by the Slack bot when the
+      # repository has the SLACK_BOT_TOKEN and SLACK_CHANNEL_ID secrets.
+      - name: Slack
+        if: always() && env.SLACK_BOT_TOKEN != '' && env.SLACK_CHANNEL_ID != ''
+        run: |
+          status="${{ job.status }}"
+          run="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          text=$(printf 'apex-gpu nightly *%s* on `%s`\n%s\n<%s|run>' "$status" "${GITHUB_SHA:0:7}" \
+            "$(cat "$NIGHTLY_OUT/summary.md" 2>/dev/null)" "$run")
+          python3 -c 'import json,sys; print(json.dumps({"channel": sys.argv[1], "text": sys.argv[2]}))' "$SLACK_CHANNEL_ID" "$text" |
+            curl -sS -X POST https://slack.com/api/chat.postMessage \
+              -H "Authorization: Bearer $SLACK_BOT_TOKEN" -H 'Content-Type: application/json; charset=utf-8' \
+              --data @- > "$RUNNER_TEMP/slack_response.json"
+          # chat.postMessage answers HTTP 200 even on an error; report it.
+          python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); r.get("ok") or print("::warning::Slack: " + str(r.get("error")))' "$RUNNER_TEMP/slack_response.json"
