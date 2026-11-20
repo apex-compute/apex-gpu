@@ -34,4 +34,4 @@ jobs:
         run: |
           gh release create "$TAG" --target "$GITHUB_SHA" \
             --title "$TAG" --generate-notes \
-            dist/*.tar.gz dist/*.sha256 image/update_*.bin
+            dist/*.tar.gz dist/*.sha256 image/gpu_update_*.bin
