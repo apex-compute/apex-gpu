@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The Vulkan driver source (mesa/) goes into the package.
+          submodules: true
       - name: Check checksums
         run: |
           (cd image && sha256sum -c SHA256SUMS)
@@ -24,7 +27,8 @@ jobs:
         run: |
           name=apex-gpu-k7-$TAG
           mkdir -p dist/$name
-          cp -r README.md FLASH.md requirements.txt LICENSE driver tools image media dist/$name/
+          cp -r README.md FLASH.md requirements.txt LICENSE driver tools image media mesa dist/$name/
+          rm -f dist/$name/mesa/.git
           tar -C dist -czf dist/$name.tar.gz $name
           (cd dist && sha256sum $name.tar.gz > $name.tar.gz.sha256)
       - name: Publish
