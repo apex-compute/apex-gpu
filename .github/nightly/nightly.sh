@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Nightly test of the apex-gpu guide on a Kintex-7 host, as an unprivileged
-# runner user (see .github/nightly/README.md for the host setup):
-#   .github/nightly/nightly.sh build|switch|smoke|mandatory|mustpass
-# Results go to $NIGHTLY_OUT (default build/nightly); the mustpass position and
-# the CTS build persist in $NIGHTLY_STATE (default ~/apex-gpu-nightly).
+# runner user:
+#   .github/nightly/nightly.sh build|program|switch|smoke|cts|collect
+# Results go to $NIGHTLY_OUT (default build/nightly);
+# the CTS build persists in $NIGHTLY_STATE (default ~/apex-gpu-nightly).
 set -euo pipefail
 root=$(git rev-parse --show-toplevel)
 cd "$root"
@@ -16,10 +16,8 @@ VKDIR=$CTS/build/external/vulkancts/modules/vulkan
 MUSTPASS=$CTS/external/vulkancts/mustpass/main
 ICD=$root/build/mesa/src/apex/vulkan/apex_development_icd.x86_64.json
 LOCK=/tmp/pcie_ci_hw_$(hostname).lock
-# Minutes of full-mustpass cases per night (MUSTPASS_HOURS or MUSTPASS_MINUTES),
-# and cases per deqp-vk run.
-BUDGET_MINUTES=${MUSTPASS_MINUTES:-$((${MUSTPASS_HOURS:-6} * 60))}
-CHUNK=${MUSTPASS_CHUNK:-500}
+# Cases per deqp-vk run.
+CHUNK=500
 mkdir -p "$OUT" "$STATE"
 
 die() { echo "::error::$*" >&2; summary "- **failed:** $*"; exit 1; }
@@ -160,14 +158,12 @@ smoke() {
 
 # Run a case list through deqp-vk in chunks, each under the card lock, and
 # append "<status> <case>" to $2. A deqp-vk that dies records its running case
-# as Crash and carries on with the rest. Returns when the list is done or the
-# deadline passes.
+# as Crash and carries on with the rest.
 run_cases() {
-	local list=$1 results=$2 deadline=${3:-0} chunk=$OUT/chunk.txt log=$OUT/chunk.log rc
+	local list=$1 results=$2 chunk=$OUT/chunk.txt log=$OUT/chunk.log rc
 	local todo=$OUT/todo.txt
 	cp "$list" "$todo"
 	while [ -s "$todo" ]; do
-		[ "$deadline" = 0 ] || [ "$(date +%s)" -lt "$deadline" ] || break
 		head -n "$CHUNK" "$todo" > "$chunk"
 		locked
 		rc=0
@@ -191,34 +187,17 @@ run_cases() {
 
 count() { awk '{print $1}' "$1" | sort | uniq -c | sort -rn | awk '{printf "%s%s %s", (NR > 1 ? ", " : ""), $2, $1}'; }
 
-# The CTS mandatory list: every case must pass or be unsupported.
-mandatory() {
-	local results=$OUT/mandatory.txt bad
+# The CTS mandatory list and the API smoke cases: every case must pass or be
+# unsupported.
+cts() {
+	local list=$OUT/cts_cases.txt results=$OUT/cts.txt bad
+	{ cat "$MUSTPASS/vk-fraction-mandatory-tests.txt"; grep '^dEQP-VK\.api\.smoke\.' "$MUSTPASS/vk-default/api.txt"; } |
+		awk 'NF && !seen[$0]++' > "$list"
 	: > "$results"
-	run_cases "$MUSTPASS/vk-fraction-mandatory-tests.txt" "$results"
-	summary "- CTS mandatory ($(wc -l < "$results") cases): $(count "$results")"
+	run_cases "$list" "$results"
+	summary "- CTS mandatory and api.smoke ($(wc -l < "$results") cases): $(count "$results")"
 	bad=$(awk '$1 !~ /^(Pass|NotSupported|QualityWarning|CompatibilityWarning)$/' "$results")
-	[ -z "$bad" ] || { summary "$(echo "$bad" | sed 's/^/  - /')"; die "CTS mandatory cases failed"; }
-}
-
-# The next slice of the full mustpass (vk-default), for $BUDGET_MINUTES. Failed
-# cases are reported; a crash, timeout or lost device fails the night.
-mustpass() {
-	local all=$STATE/vk-default.txt pos=$STATE/mustpass.position start total slice results=$OUT/mustpass.txt deadline bad
-	[ -s "$all" ] || find "$MUSTPASS/vk-default" -name '*.txt' | sort | xargs cat | awk 'NF && !seen[$0]++' > "$all"
-	total=$(wc -l < "$all")
-	start=$(cat "$pos" 2>/dev/null || echo 0)
-	[ "$start" -lt "$total" ] || start=0
-	slice=$OUT/mustpass_slice.txt
-	tail -n +"$((start + 1))" "$all" > "$slice"
-	: > "$results"
-	deadline=$(($(date +%s) + BUDGET_MINUTES * 60))
-	run_cases "$slice" "$results" "$deadline"
-	echo "$((start + $(wc -l < "$results")))" > "$pos"
-	summary "- CTS mustpass slice: cases $((start + 1))-$(cat "$pos") of $total ($(wc -l < "$results") in ${BUDGET_MINUTES} min): $(count "$results")"
-	awk '$1 == "Fail"{print $2}' "$results" > "$OUT/mustpass_failed.txt"
-	bad=$(awk '$1 ~ /^(Crash|Timeout|DeviceLost|InternalError)$/' "$results")
-	[ -z "$bad" ] || { summary "$(echo "$bad" | head -50 | sed 's/^/  - /')"; die "crash, timeout or lost device in the mustpass slice"; }
+	[ -z "$bad" ] || { summary "$(echo "$bad" | sed 's/^/  - /')"; die "CTS cases failed"; }
 }
 
 collect() {

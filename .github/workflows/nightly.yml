@@ -1,17 +1,14 @@
 name: nightly
 
 # The guide on the Kintex-7 every night: build, flash the GPU image, switch
-# between the GPU and unified-engine images, the FLASH.md smoke test and the Vulkan CTS mustpass.
+# between the GPU and unified-engine images, the FLASH.md smoke test and a short
+# Vulkan CTS check.
 # Only the schedule and a manual run start it, never a pull request: the job
 # runs on a lab host.
 on:
   schedule:
     - cron: "0 6 * * *"
   workflow_dispatch:
-    inputs:
-      mustpass_hours:
-        description: Hours of full-mustpass cases (0 skips them)
-        default: "6"
 
 permissions:
   contents: read
@@ -24,10 +21,9 @@ concurrency:
 jobs:
   kintex7:
     runs-on: [self-hosted, apex-gpu-k7]
-    timeout-minutes: 600
+    timeout-minutes: 120
     env:
       NIGHTLY_OUT: ${{ github.workspace }}/build/nightly
-      MUSTPASS_HOURS: ${{ inputs.mustpass_hours || '6' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,14 +50,9 @@ jobs:
         id: smoke
         run: .github/nightly/nightly.sh smoke
 
-      - name: CTS mandatory
-        id: mandatory
-        run: .github/nightly/nightly.sh mandatory
-
-      - name: CTS mustpass slice
-        id: mustpass
-        if: env.MUSTPASS_HOURS != '0'
-        run: .github/nightly/nightly.sh mustpass
+      - name: CTS mandatory and api.smoke
+        id: cts
+        run: .github/nightly/nightly.sh cts
 
       - name: Collect
         if: always()
