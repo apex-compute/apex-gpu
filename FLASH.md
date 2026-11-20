@@ -23,7 +23,7 @@ The board's 64 MiB configuration flash holds two images:
 | Slot | Flash address | Image | PCI ID | Kernel driver |
 | --- | --- | --- | --- | --- |
 | `unified-engine` | 0 | unified-engine, the default image | `10ee:7024` | `xdma` |
-| `gpu` | 32 MiB | The Apex GPU (`image/gpu_k7_flash.bin`) | `10ee:a15e` | `apex_gpu` |
+| `gpu` | 32 MiB | The Apex GPU (`image/*.bin`) | `10ee:a15e` | `apex_gpu` |
 
 The FPGA falls back to the unified-engine image if the GPU slot does not
 configure. Check which image runs:
@@ -153,8 +153,8 @@ image until the next boot:
 ```bash
 echo $BDF | sudo tee /sys/bus/pci/drivers/apex_gpu/unbind
 
-sudo python3 -I tools/apex_flash.py program image/gpu_k7_flash.bin --slot gpu --bdf $BDF
-sudo python3 -I tools/apex_flash.py verify  image/gpu_k7_flash.bin --slot gpu --bdf $BDF
+sudo python3 -I tools/apex_flash.py program image/*.bin --slot gpu --bdf $BDF
+sudo python3 -I tools/apex_flash.py verify  image/*.bin --slot gpu --bdf $BDF
 
 # Load the new image
 sudo python3 -I tools/apex_flash.py boot --slot gpu --bdf $BDF
