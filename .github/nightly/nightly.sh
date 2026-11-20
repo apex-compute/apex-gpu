@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Nightly test of the apex-gpu guide on a Kintex-7 host, as an unprivileged
-# runner user (see .github/nightly/README.md for the host setup):
+# runner user:
 #   .github/nightly/nightly.sh build|program|switch|smoke|cts|collect
 # Results go to $NIGHTLY_OUT (default build/nightly);
 # the CTS build persists in $NIGHTLY_STATE (default ~/apex-gpu-nightly).
