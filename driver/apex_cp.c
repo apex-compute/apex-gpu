@@ -1953,12 +1953,15 @@ static void queue_destroy(struct apex_ctx *ctx, struct apex_queue *q, bool hw)
 	}
 	if (hw && !cp->failed)
 		kring_vm_fence(cp, ctx->vmid);
-	safe = !cp->quarantined;
+	/* After remove the device has left its IOMMU domain, and the DMA API
+	 * would free the page's bus address as a physical one: leak it. */
+	safe = !cp->quarantined && READ_ONCE(cp->present);
 	page_bo_revoke(q->status_bo);
 	page_bo_revoke(q->doorbell_bo);
 	ctx->queues[q->index] = NULL;
 	if (!safe) {
-		dev_warn(cp->dev, "leaking status page of queue %u\n", q->slot);
+		dev_warn(cp->dev, "leaking status page of queue %u%s\n", q->slot,
+			 READ_ONCE(cp->present) ? "" : " after device remove");
 		return;
 	}
 	mutex_lock(&cp->lock);
