@@ -414,6 +414,8 @@ static void cp_queue_program(struct apex_cp *cp, struct apex_queue *q, u32 vmid,
 	spin_unlock_irqrestore(&cp->reg_lock, flags);
 }
 
+/* Remove unmaps BAR2 while files may still be open, so kernel stores through
+ * it run inside cp_hw_enter() or under fence_lock with hw_gone clear. */
 static void __iomem *local_map(struct apex_cp *cp, u64 address)
 {
 	return cp->bar2 + address;
@@ -1944,7 +1946,7 @@ static void queue_destroy(struct apex_ctx *ctx, struct apex_queue *q, bool hw)
 		}
 	}
 	queue_detach(cp, q);
-	if (ctx->root) {
+	if (hw && ctx->root) {
 		pt_clear(ctx, q->status_va, q->status_va + SZ_4K);
 		pt_clear(ctx, q->kwait_va, q->kwait_va + SZ_4K);
 		wmb();
@@ -2225,14 +2227,15 @@ static void queue_kwait(struct apex_cp *cp, struct apex_queue *q, u64 value)
 	if (value <= q->kwait)
 		return;
 	q->kwait = value;
+	if (cp->hw_gone)
+		return;
 	/* A native reset holds map_lock for write and ends every queue's waits. */
 	if (down_read_trylock(&cp->map_lock)) {
 		writeq(value, local_map(cp, q->kwait_node.start));
 		up_read(&cp->map_lock);
 	}
 	wmb();
-	if (!cp->hw_gone)
-		writel(1, cp->bar4 + q->slot * SZ_4K + APEX_CP_DOORBELL_RECHECK);
+	writel(1, cp->bar4 + q->slot * SZ_4K + APEX_CP_DOORBELL_RECHECK);
 }
 
 static void apex_wait_cb(struct dma_fence *signaled, struct dma_fence_cb *cb)
