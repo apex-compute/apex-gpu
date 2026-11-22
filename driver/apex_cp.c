@@ -2747,10 +2747,15 @@ void apex_cp_remove(struct apex_cp *cp, bool drained)
 static void cp_free(struct kref *ref)
 {
 	struct apex_cp *cp = container_of(ref, struct apex_cp, ref);
+	struct drm_mm_node *node, *next;
 
 	cancel_work_sync(&cp->fail_work);
 	cancel_work_sync(&cp->reset_work);
 	cancel_delayed_work_sync(&cp->fence_work);
+	/* The device is gone: LOCAL left behind by leaked queues (a file
+	 * closed after remove, or quarantined backing) is only bookkeeping. */
+	drm_mm_for_each_node_safe(node, next, &cp->mm)
+		drm_mm_remove_node(node);
 	drm_mm_takedown(&cp->mm);
 	pci_dev_put(cp->pdev);
 	kfree(cp);
