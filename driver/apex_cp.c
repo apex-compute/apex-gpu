@@ -58,6 +58,8 @@
 #include "apex_drm.h"
 
 /* BAR0 command-processor block. */
+#define BAR0_CAPS 0x000c
+#define BAR0_CAP_GRAPHICS_SCRATCH BIT(10)
 #define CP_ID 0x0500
 #define CP_CAPS 0x0504
 #define CP_CONTROL 0x0508
@@ -268,6 +270,7 @@ struct apex_cp {
 	u64 usable, visible;
 	u32 profile;
 	u32 caps;
+	bool graphics_scratch; /* BAR0 CAP_GRAPHICS_SCRATCH */
 	u32 timestamp_hz;
 	bool present;     /* command processor usable */
 	bool master;
@@ -2358,6 +2361,8 @@ static int info_ioctl(struct drm_device *drm, void *data, struct drm_file *file)
 		info->local_used = cp->local_used;
 		mutex_unlock(&cp->lock);
 	}
+	if (cp->graphics_scratch)
+		info->flags |= APEX_INFO_GRAPHICS_SCRATCH;
 	if (cp->present) {
 		info->queue_slots = cp->caps & 0xff;
 		info->vm_slots = (cp->caps >> 8) & 0xff;
@@ -2589,6 +2594,7 @@ struct apex_cp *apex_cp_create(struct pci_dev *pdev, void __iomem *bar0, u32 pro
 	cp->pdev = pci_dev_get(pdev);
 	cp->dev = &pdev->dev;
 	cp->bar0 = bar0;
+	cp->graphics_scratch = readl(bar0 + BAR0_CAPS) & BAR0_CAP_GRAPHICS_SCRATCH;
 	cp->ops = ops;
 	cp->owner = owner;
 	cp->profile = profile;
