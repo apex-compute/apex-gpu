@@ -103,21 +103,25 @@ class Card:
         if bar0[0] != MAGIC or bar0[2] != PROFILE_K7:
             sys.exit(f"{bdf} is not a Kintex-7 GPU image")
         bar5 = len(sizes) > 5 and sizes[5] == FLASH_BYTES
+        # The image BAR answers with the flash ID in its control page. Images
+        # m14 and m15 had the window in BAR0 instead and set capability bit 10
+        # (CAP_BPI_FLASH); newer images may reuse that bit, so the ID decides.
+        if bar5:
+            image = mapping(self.path, 5, FLASH_BYTES)
+            if image[(CONTROL + C_ID) >> 2] == ID_VALUE:
+                self.kind = "image-bar"
+                self.bar = self.flash = image
+                return
         if not bar0[3] & CAP_BPI_FLASH:
             if not bar5:
                 sys.exit(f"{bdf} has no image BAR (BAR5 unassigned: the slot's memory window is too small)")
-            self.kind = "image-bar"
-            self.bar = mapping(self.path, 5, FLASH_BYTES)
-            self.flash = self.bar
-            if self.reg(CONTROL + C_ID) != ID_VALUE:
-                sys.exit(f"image BAR identity {self.reg(CONTROL + C_ID):#010x}, expected {ID_VALUE:#010x}")
-            return
+            sys.exit(f"image BAR identity {image[(CONTROL + C_ID) >> 2]:#010x}, expected {ID_VALUE:#010x}")
         self.kind = "legacy"
         self.bar = bar0
         if self.reg(L_ID) != ID_VALUE:
             sys.exit(f"BAR0 flash identity {self.reg(L_ID):#010x}, expected {ID_VALUE:#010x}")
         if bar5:
-            self.flash = mapping(self.path, 5, FLASH_BYTES)
+            self.flash = image
 
     def reg(self, offset):
         return self.bar[offset >> 2]

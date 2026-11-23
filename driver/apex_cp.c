@@ -58,6 +58,8 @@
 #include "apex_drm.h"
 
 /* BAR0 command-processor block. */
+#define BAR0_CAPS 0x000c
+#define BAR0_CAP_GRAPHICS_SCRATCH BIT(11)
 #define CP_ID 0x0500
 #define CP_CAPS 0x0504
 #define CP_CONTROL 0x0508
@@ -268,6 +270,7 @@ struct apex_cp {
 	u64 usable, visible;
 	u32 profile;
 	u32 caps;
+	bool graphics_scratch; /* BAR0 CAP_GRAPHICS_SCRATCH */
 	u32 timestamp_hz;
 	bool present;     /* command processor usable */
 	bool master;
@@ -1953,12 +1956,15 @@ static void queue_destroy(struct apex_ctx *ctx, struct apex_queue *q, bool hw)
 	}
 	if (hw && !cp->failed)
 		kring_vm_fence(cp, ctx->vmid);
-	safe = !cp->quarantined;
+	/* After remove the device has left its IOMMU domain, and the DMA API
+	 * would free the page's bus address as a physical one: leak it. */
+	safe = !cp->quarantined && READ_ONCE(cp->present);
 	page_bo_revoke(q->status_bo);
 	page_bo_revoke(q->doorbell_bo);
 	ctx->queues[q->index] = NULL;
 	if (!safe) {
-		dev_warn(cp->dev, "leaking status page of queue %u\n", q->slot);
+		dev_warn(cp->dev, "leaking status page of queue %u%s\n", q->slot,
+			 READ_ONCE(cp->present) ? "" : " after device remove");
 		return;
 	}
 	mutex_lock(&cp->lock);
@@ -2355,6 +2361,8 @@ static int info_ioctl(struct drm_device *drm, void *data, struct drm_file *file)
 		info->local_used = cp->local_used;
 		mutex_unlock(&cp->lock);
 	}
+	if (cp->graphics_scratch)
+		info->flags |= APEX_INFO_GRAPHICS_SCRATCH;
 	if (cp->present) {
 		info->queue_slots = cp->caps & 0xff;
 		info->vm_slots = (cp->caps >> 8) & 0xff;
@@ -2586,6 +2594,7 @@ struct apex_cp *apex_cp_create(struct pci_dev *pdev, void __iomem *bar0, u32 pro
 	cp->pdev = pci_dev_get(pdev);
 	cp->dev = &pdev->dev;
 	cp->bar0 = bar0;
+	cp->graphics_scratch = readl(bar0 + BAR0_CAPS) & BAR0_CAP_GRAPHICS_SCRATCH;
 	cp->ops = ops;
 	cp->owner = owner;
 	cp->profile = profile;
@@ -2744,10 +2753,15 @@ void apex_cp_remove(struct apex_cp *cp, bool drained)
 static void cp_free(struct kref *ref)
 {
 	struct apex_cp *cp = container_of(ref, struct apex_cp, ref);
+	struct drm_mm_node *node, *next;
 
 	cancel_work_sync(&cp->fail_work);
 	cancel_work_sync(&cp->reset_work);
 	cancel_delayed_work_sync(&cp->fence_work);
+	/* The device is gone: LOCAL left behind by leaked queues (a file
+	 * closed after remove, or quarantined backing) is only bookkeeping. */
+	drm_mm_for_each_node_safe(node, next, &cp->mm)
+		drm_mm_remove_node(node);
 	drm_mm_takedown(&cp->mm);
 	pci_dev_put(cp->pdev);
 	kfree(cp);
