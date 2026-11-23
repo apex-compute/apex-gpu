@@ -102,6 +102,8 @@ cd apex-gpu
 sudo apt install linux-headers-$(uname -r) $(grep -v '^#' requirements.txt)
 ```
 
+If apt can't find `linux-headers-$(uname -r)`, the running kernel came from a vendor rather than Ubuntu's archive (for example an NVIDIA or cloud kernel). Install that vendor's headers package for the running kernel instead, or switch to the HWE kernel. The driver builds against `/lib/modules/$(uname -r)/build`.
+
 Run the remaining steps from the `apex-gpu` folder.
 
 ### 2. Flash the GPU Image
