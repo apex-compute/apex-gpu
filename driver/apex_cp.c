@@ -59,7 +59,7 @@
 
 /* BAR0 command-processor block. */
 #define BAR0_CAPS 0x000c
-#define BAR0_CAP_GRAPHICS_SCRATCH BIT(10)
+#define BAR0_CAP_GRAPHICS_SCRATCH BIT(11)
 #define CP_ID 0x0500
 #define CP_CAPS 0x0504
 #define CP_CONTROL 0x0508
